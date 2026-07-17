@@ -10,10 +10,7 @@
       "name": "glovo",
       "displayName": "Glovo",
       "description": "Browse Glovo stores, inspect products and options, read order history, and prepare baskets without checkout.",
-      "source": {
-        "source": "github",
-        "repo": "denya/glovo-skill"
-      },
+      "source": "./",
       "author": {
         "name": "Denya"
       },

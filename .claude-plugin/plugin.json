@@ -1,6 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "glovo",
+  "version": "0.1.0",
   "displayName": "Glovo",
   "description": "Browse Glovo stores, inspect products and options, read order history, and prepare baskets without checkout.",
   "author": {
