@@ -13,7 +13,7 @@
 - [x] Run checkout-free authenticated API-only suggestion E2E; do not mutate the basket.
 - [x] Bump and align all runtime/package metadata to `0.2.0`.
 - [x] Run full build, tests, MCP smoke, plugin/MCPB validation, audit, secret/privacy/no-browser checks, and isolated installs.
-- [ ] Commit, push, tag `v0.2.0`, publish the validated MCPB/checksum, then re-download and install-test the public artifact.
+- [x] Commit, push, tag `v0.2.0`, publish the validated MCPB/checksum, then re-download and install-test the public artifact.
 
 ## Build
 

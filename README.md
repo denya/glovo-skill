@@ -21,7 +21,7 @@ Optional Google Maps quality evidence is configured after installation through `
 
 [Release notes and checksum](https://github.com/denya/glovo-skill/releases/tag/v0.2.0)
 
-SHA256: published in the release notes; the main-branch README is updated with the verified digest after asset publication.
+SHA256: `a519c63bb13b059f85c246d54aac01a9685e00b616308d8484090c83b84ee14f`
 
 1. Download `glovo-skill-0.2.0.mcpb`.
 2. Open Claude Desktop on macOS.
