@@ -1,5 +1,6 @@
 node_modules/
 *.mcpb
+*.mcpb.sha256
 .DS_Store
 .glovo/
 *.log
