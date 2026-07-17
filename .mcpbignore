@@ -1,4 +1,5 @@
 .git/
+.claude/
 .claude-plugin/
 .mcp.json
 node_modules/
