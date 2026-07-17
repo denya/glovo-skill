@@ -27,12 +27,12 @@
 - [x] Basket E2E: snapshot current basket, add pizza, set quantity, remove, verify exact restoration. Final run passed with PATCH-zero removal and exact salted fingerprint restore.
 - [x] Modifier E2E: add a valid required-option product, verify basket, remove/restore. Final run passed with required options validated and selected customizations visible in the basket.
 - [x] Dependency audit and secret/privacy scan.
-- [ ] Clean install from published GitHub repo and smoke once more after the initial push.
+- [x] Clean install from published GitHub repo and smoke once more from an isolated Claude config.
 
 ## Publish
 
 - [x] MIT license and attribution.
 - [x] README with install/auth/use commands and safety notes.
 - [x] Local verified commit ready for public push.
-- [x] Public GitHub repo created and initial branch pushed under `denya`; final follow-up push and published-form smoke remain.
+- [x] Public GitHub repo created and final verified branch pushed under `denya`.
 - [x] Final local report: commit, feature matrix, E2E evidence, limitations, negative findings.
