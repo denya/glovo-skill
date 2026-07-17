@@ -13,6 +13,8 @@ import {
   compactSavedLocations,
   compactMenu,
   compactSearch,
+  compactStoreContent,
+  compactStoreOrderOptions,
   compactProductView,
   compactBasket,
   compactOrder,
@@ -215,6 +217,47 @@ server.registerTool(
 );
 
 server.registerTool(
+  "glovo_get_store_recommendations",
+  {
+    title: "Store recommendations",
+    description: "Read authenticated current-product carousels such as Easy Reorder and Top Sellers. Returns live product identifiers, prices, and availability without changing the basket.",
+    inputSchema: {
+      store_id: z.union([z.string(), z.number()]),
+      store_address_id: z.union([z.string(), z.number()]),
+      kind: z.enum(["easy_reorder", "top_sellers", "all"]).optional().describe("Default easy_reorder."),
+      limit: z.number().int().min(1).max(100).optional().describe("Default 40."),
+    },
+  },
+  tool(async ({ store_id, store_address_id, kind, limit }, c) => json(compactStoreContent(
+    await c.getStoreContent(store_id, store_address_id, { auth: true }),
+    { kind: kind ?? "easy_reorder", limit: limit ?? 40 },
+  ))),
+);
+
+server.registerTool(
+  "glovo_get_store_order_options",
+  {
+    title: "Store order options",
+    description: "Read delivery minimums, surcharges, restrictions, public store information, and similar stores before preparing a basket. No checkout or order placement.",
+    inputSchema: {
+      store_id: z.union([z.string(), z.number()]),
+      store_address_id: z.union([z.string(), z.number()]),
+      translation: z.string().min(2).optional().describe("Store information language. Default en."),
+      similar_limit: z.number().int().min(1).max(20).optional().describe("Default 5."),
+    },
+  },
+  tool(async ({ store_id, store_address_id, translation, similar_limit }, c) => {
+    const [fees, restrictions, info, similar] = await Promise.all([
+      c.getStoreFees(store_id, store_address_id),
+      c.getStoreRestrictions(store_id, store_address_id),
+      c.getStoreInfo(store_id, store_address_id, translation ?? "en"),
+      c.getSimilarStores(store_id, similar_limit ?? 5),
+    ]);
+    return json(compactStoreOrderOptions({ fees, restrictions, info, similar }));
+  }),
+);
+
+server.registerTool(
   "glovo_search_store_items",
   {
     title: "Search store items",
@@ -317,6 +360,23 @@ server.registerTool(
 );
 
 server.registerTool(
+  "glovo_plan_reorder",
+  {
+    title: "Plan a repeat order",
+    description: "Resolve past order lines against authenticated Easy Reorder and current store search results. Read-only; inspect product options and obtain approval before using basket tools.",
+    inputSchema: {
+      order_id: z.union([z.string(), z.number()]).describe("Order id from glovo_get_purchase_history."),
+      max_searches: z.number().int().min(0).max(20).optional().describe("Maximum fallback store searches. Default 5."),
+      candidates_per_line: z.number().int().min(1).max(5).optional().describe("Default 3."),
+    },
+  },
+  tool(async ({ order_id, max_searches, candidates_per_line }, c) => json(await c.planReorder(order_id, {
+    maxSearches: max_searches ?? 5,
+    candidatesPerLine: candidates_per_line ?? 3,
+  }))),
+);
+
+server.registerTool(
   "glovo_get_order_stats",
   {
     title: "Order statistics",
@@ -330,6 +390,26 @@ server.registerTool(
     const discovery = await c.getAllOrderCards({ maxPages: max_pages ?? Infinity, pageDelayMs: page_delay_ms ?? 750 });
     return json({ ...orderStatsFromCards(discovery.orders), discovery: { pages: discovery.pages.length, stopped_reason: discovery.stopped_reason, strategy: discovery.strategy } });
   }),
+);
+
+server.registerTool(
+  "glovo_analyze_order_history",
+  {
+    title: "Analyze order history",
+    description: "Walk cursor-correct history, enrich a bounded recent subset with order details, and calculate truthful product frequency, cadence, customization, and visible-spend statistics with explicit coverage.",
+    inputSchema: {
+      max_pages: z.number().int().min(1).optional().describe("Omit for full cursor discovery."),
+      detail_limit: z.number().int().min(0).max(50).optional().describe("Recent order details to enrich. Default 10; stops on detail rate limit."),
+      page_delay_ms: z.number().int().min(0).max(10000).optional().describe("Default 750."),
+      detail_delay_ms: z.number().int().min(0).max(10000).optional().describe("Default 1000."),
+    },
+  },
+  tool(async ({ max_pages, detail_limit, page_delay_ms, detail_delay_ms }, c) => json(await c.analyzeOrderHistory({
+    maxPages: max_pages ?? Infinity,
+    detailLimit: detail_limit ?? 10,
+    pageDelayMs: page_delay_ms ?? 750,
+    detailDelayMs: detail_delay_ms ?? 1000,
+  }))),
 );
 
 server.registerTool(

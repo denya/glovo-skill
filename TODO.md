@@ -10,6 +10,10 @@
 - [x] Harden session file to `0600` and session parent directory to `0700` on save/load migration.
 - [x] Add missing read tools: API-only location search/select, authenticated saved delivery locations/current-location match, product option groups, full order pagination, order stats.
 - [x] Add repeat/reorder surface as read-only preview with unsupported-line reasons.
+- [x] Add authenticated Easy Reorder / Top Sellers research with current product identifiers.
+- [x] Add store order-option pre-checks for delivery minimums, surcharges, restrictions, information, and alternatives.
+- [x] Add bounded detail-backed history analysis with product frequency, cadence, customization, visible-spend, and truthful coverage.
+- [x] Add read-only repeat planning that resolves old name-only lines to current candidates and routes approved items through existing product-option and basket tools.
 - [x] Keep basket write tools explicit and no checkout/payment tools.
 
 ## Verification
@@ -24,6 +28,9 @@
 - [x] Location contract tests prove public autocomplete/resolve/serviceability URLs, no auth, capped compact output, saved-address read endpoint/auth behavior, and no-save on malformed or undeliverable locations.
 - [x] Read-only live smoke: auth, stores, search, product details, order pagination.
 - [x] MCP smoke exercises registered location and full-history/stats tools, not only client helpers.
+- [x] Authenticated MCP smoke exercises store recommendations/order options, detail-backed analysis, and repeat planning without printing personal payloads.
+- [x] Paced full-history analysis reached cursor exhaustion and bounded detail enrichment without 429.
+- [x] Read-only live modifier preflight selects a currently open/available product instead of assuming pizza exists at every saved location.
 - [x] Basket E2E: snapshot current basket, add pizza, set quantity, remove, verify exact restoration. Final run passed with PATCH-zero removal and exact salted fingerprint restore.
 - [x] Modifier E2E: add a valid required-option product, verify basket, remove/restore. Final run passed with required options validated and selected customizations visible in the basket.
 - [x] Dependency audit and secret/privacy scan.

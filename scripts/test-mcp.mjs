@@ -69,11 +69,16 @@ function summarize(name, parsed) {
   if (name === "glovo_select_location") return { ok: true, selected: Boolean(parsed.selected), deliverable: Boolean(parsed.deliverable), has_city: Boolean(parsed.city_code), has_country: Boolean(parsed.country_code) };
   if (name === "glovo_browse_stores") return { ok: true, count: parsed.count, has_pagination: Boolean(parsed.pagination), category: parsed.category?.name || parsed.category?.title };
   if (name === "glovo_get_store_menu") return { ok: true, count: parsed.count, type: parsed.type };
+  if (name === "glovo_get_store_recommendations") return { ok: true, count: parsed.count, sections: parsed.sections?.length || 0, current_ids_complete: (parsed.products || []).every((product) => Boolean(product.product_id && product.external_id && product.store_product_id)), exposes_tokens: /token/i.test(JSON.stringify(parsed)) };
+  if (name === "glovo_get_store_order_options") return { ok: true, fee_ranges: parsed.minimum_basket_ranges?.length || 0, restrictions: parsed.restrictions?.length || 0, store_information: parsed.store_information?.length || 0, similar_stores: parsed.similar_stores?.length || 0, checkout_free: /does not create a basket/i.test(parsed.boundary || "") };
   if (name === "glovo_search_store_items") return { ok: true, count: parsed.count, total: parsed.total };
   if (name === "glovo_get_purchase_history") return { ok: true, count: parsed.count, has_next_offset: parsed.next_offset != null, raw_shape: parsed.raw_shape };
+  if (name === "glovo_get_order_items") return { ok: true, items: parsed.items?.length || 0, has_store_ids: Boolean(parsed.store_id && parsed.store_address_id), has_pricing_breakdown: Array.isArray(parsed.pricing_breakdown), native_reorder_allowed: Boolean(parsed.native_reorder_allowed) };
   if (name === "glovo_get_order_stats") return { ok: true, orders: parsed.orders, pages: parsed.discovery?.pages, stopped_reason: parsed.discovery?.stopped_reason, stores: parsed.stores };
+  if (name === "glovo_analyze_order_history") return { ok: true, discovered_orders: parsed.coverage?.discovered_orders, detailed_orders: parsed.coverage?.detailed_orders, detail_rate_limited: Boolean(parsed.coverage?.detail_rate_limited), distinct_products: parsed.distinct_products, cadence_products: (parsed.top_products || []).filter((product) => product.average_interval_days != null).length };
   if (name === "glovo_get_basket") return { ok: true, basket_payload_present: parsed != null, products_count: parsed.products_count ?? parsed.baskets?.reduce((sum, basket) => sum + (basket.products?.length || 0), 0) };
   if (name === "glovo_preview_reorder") return { ok: true, items_count: parsed.items_count, can_prepare_basket: Boolean(parsed.can_prepare_basket), unsupported_reasons: parsed.unsupported_reasons || [] };
+  if (name === "glovo_plan_reorder") return { ok: true, items_count: parsed.items_count, resolved_items: parsed.resolved_items, unresolved_items: parsed.unresolved_items, searches_used: parsed.searches_used, can_prepare_after_review: Boolean(parsed.can_prepare_after_review), mutates_basket: Boolean(parsed.mutates_basket) };
   return { ok: true, keys: Object.keys(parsed).sort() };
 }
 
@@ -99,8 +104,18 @@ if (auth) {
   const history = await call("glovo_get_purchase_history", { limit: 3 });
   const historyParsed = history.result.isError ? null : JSON.parse(history.text || "{}");
   const firstOrder = historyParsed?.orders?.[0];
-  if (firstOrder?.order_id) await call("glovo_preview_reorder", { order_id: firstOrder.order_id });
+  if (firstOrder?.order_id) {
+    await call("glovo_preview_reorder", { order_id: firstOrder.order_id });
+    const detail = await call("glovo_get_order_items", { order_id: firstOrder.order_id });
+    const detailParsed = detail.result.isError ? null : JSON.parse(detail.text || "{}");
+    if (detailParsed?.store_id && detailParsed?.store_address_id) {
+      await call("glovo_get_store_recommendations", { store_id: detailParsed.store_id, store_address_id: detailParsed.store_address_id, kind: "easy_reorder", limit: 10 });
+      await call("glovo_get_store_order_options", { store_id: detailParsed.store_id, store_address_id: detailParsed.store_address_id, similar_limit: 3 });
+      await call("glovo_plan_reorder", { order_id: firstOrder.order_id, max_searches: 2, candidates_per_line: 2 });
+    }
+  }
   await call("glovo_get_order_stats", { max_pages: 2, page_delay_ms: 0 });
+  await call("glovo_analyze_order_history", { max_pages: 1, detail_limit: 2, page_delay_ms: 0, detail_delay_ms: 750 });
   await call("glovo_get_basket", {});
 }
 

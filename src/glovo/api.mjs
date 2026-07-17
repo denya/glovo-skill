@@ -39,8 +39,8 @@ function imageUrl(source) {
 
 function availability(value) {
   if (!value) return null;
-  if (value.available === true || value.isAvailable === true || value.enabled === true) return true;
-  if (value.available === false || value.isAvailable === false || value.enabled === false || value.disabled === true || value.soldOut === true) return false;
+  if (value.available === true || value.isAvailable === true || value.enabled === true || value.outOfStock === false) return true;
+  if (value.available === false || value.isAvailable === false || value.enabled === false || value.disabled === true || value.soldOut === true || value.outOfStock === true) return false;
   const status = String(value.availability?.status ?? value.status ?? "").toUpperCase();
   if (["AVAILABLE", "OPEN", "ENABLED"].includes(status)) return true;
   if (["UNAVAILABLE", "CLOSED", "DISABLED", "SOLD_OUT"].includes(status)) return false;
@@ -337,7 +337,7 @@ export class GlovoClient {
     return this.call(`/v3/stores/${storeId}/addresses/${storeAddressId}/node/store_menu${suffix}`);
   }
 
-  getStoreContent(storeId, storeAddressId, { contentSlug, translation, consents, useV4 = true } = {}) {
+  getStoreContent(storeId, storeAddressId, { contentSlug, translation, consents, useV4 = true, auth = false } = {}) {
     const qs = new URLSearchParams();
     if (translation) qs.set("translation", translation);
     if (contentSlug) {
@@ -348,7 +348,24 @@ export class GlovoClient {
     const path = useV4
       ? `/v4/stores/${storeId}/addresses/${storeAddressId}/content/main`
       : `/v3/stores/${storeId}/addresses/${storeAddressId}/content`;
-    return this.call(`${path}${qs.toString() ? `?${qs}` : ""}`);
+    return this.call(`${path}${qs.toString() ? `?${qs}` : ""}`, { auth });
+  }
+
+  getStoreFees(storeId, storeAddressId) {
+    return this.call(`/v1/stores/${storeId}/addresses/${storeAddressId}/node/store_fees`);
+  }
+
+  getStoreRestrictions(storeId, storeAddressId) {
+    return this.call(`/v4/stores/${storeId}/addresses/${storeAddressId}/restrictions`);
+  }
+
+  getStoreInfo(storeId, storeAddressId, translation = "en") {
+    return this.call(`/v3/stores/${storeId}/addresses/${storeAddressId}/store_info_screen?translation=${encodeURIComponent(translation)}`);
+  }
+
+  getSimilarStores(storeId, limit = 5) {
+    const qs = new URLSearchParams({ limit: String(limit), storeId: String(storeId), city_changed: "false" });
+    return this.call(`/v1/store-view/web/similar-stores?${qs}`);
   }
 
   searchStoreItems(storeId, storeAddressId, query) {
@@ -534,6 +551,69 @@ export class GlovoClient {
 
   getOrder(orderId) {
     return this.call(`/v3/customer/orders/${orderId}`, { auth: true });
+  }
+
+  async analyzeOrderHistory({ maxPages = Infinity, detailLimit = 10, pageDelayMs = 750, detailDelayMs = 1000 } = {}) {
+    const discovery = await this.getAllOrderCards({ maxPages, pageDelayMs });
+    const details = [];
+    let errors = 0;
+    let rateLimited = false;
+    let attempts = 0;
+    for (const order of discovery.orders.slice(0, Math.max(0, detailLimit))) {
+      attempts += 1;
+      try {
+        details.push(await this.getOrder(order.order_id));
+      } catch (error) {
+        if (error instanceof RateLimitError) {
+          rateLimited = true;
+          break;
+        }
+        errors += 1;
+      }
+      if (detailDelayMs) await sleep(detailDelayMs);
+    }
+    return {
+      ...orderAnalysisFromDetails(details),
+      card_statistics: orderStatsFromCards(discovery.orders),
+      coverage: {
+        discovered_orders: discovery.orders.length,
+        cursor_pages: discovery.pages.length,
+        detail_limit: Math.max(0, detailLimit),
+        detail_attempts: attempts,
+        detailed_orders: details.length,
+        detail_errors: errors,
+        detail_rate_limited: rateLimited,
+        stopped_reason: discovery.stopped_reason,
+        strategy: discovery.strategy,
+      },
+    };
+  }
+
+  async planReorder(orderId, { maxSearches = 5, candidatesPerLine = 3 } = {}) {
+    const order = await this.getOrder(orderId);
+    const storeId = order?.storeId ?? order?.store?.id ?? order?.store?.storeId;
+    const storeAddressId = order?.storeAddressId ?? order?.store?.addressId ?? order?.store?.storeAddressId;
+    if (!storeId || !storeAddressId) return buildReorderPlan(order, new Map(), { maxSearches, searched: 0 });
+
+    const content = await this.getStoreContent(storeId, storeAddressId, { auth: true });
+    const pool = compactStoreContent(content, { kind: "easy_reorder", limit: 100 }).products;
+    const lines = pastOrderLines(order);
+    const candidates = new Map();
+    let searched = 0;
+    for (const [index, line] of lines.entries()) {
+      let ranked = rankProductCandidates(line.name, pool, candidatesPerLine);
+      if ((!ranked.length || ranked[0].match_score < 0.9) && searched < maxSearches && line.name) {
+        searched += 1;
+        const current = compactSearch(await this.searchStoreItems(storeId, storeAddressId, line.name), {
+          storeId: String(storeId),
+          storeAddressId,
+          limit: 24,
+        }).results.map((product) => ({ ...product, source: "store_search" }));
+        ranked = rankProductCandidates(line.name, [...pool, ...current], candidatesPerLine);
+      }
+      candidates.set(index, ranked);
+    }
+    return buildReorderPlan(order, candidates, { maxSearches, searched });
   }
 }
 
@@ -817,6 +897,82 @@ export function compactSearch(data, { storeId, storeAddressId, limit = 24 } = {}
   };
 }
 
+function productEventData(element) {
+  return (element?.actions || [])
+    .flatMap((action) => action?.data?.events || [])
+    .map((event) => event?.data)
+    .find((data) => data?.collectionType || data?.isOrderedBefore) || {};
+}
+
+function contentKind(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z]/g, "");
+}
+
+export function compactStoreContent(data, { kind = "all", limit = 40 } = {}) {
+  const wanted = contentKind(kind);
+  let remaining = Math.max(1, Math.min(Number(limit) || 40, 100));
+  const sections = [];
+  for (const section of data?.data?.body || data?.body || []) {
+    const elements = section?.data?.elements || [];
+    const productElements = elements.filter((element) => element?.type === "PRODUCT_TILE" && element?.data);
+    if (!productElements.length) continue;
+    const firstEvent = productEventData(productElements[0]);
+    const collectionType = firstValue(firstEvent.collectionType, section?.data?.tracking?.collectionType, section?.data?.title, "products");
+    const normalizedType = contentKind(collectionType);
+    if (wanted !== "all" && wanted !== normalizedType) continue;
+    const products = productElements.slice(0, remaining).map((element) => {
+      const event = productEventData(element);
+      return compactItem(element.data, {
+        description: element.data.description,
+        collection_type: firstValue(event.collectionType, collectionType),
+        ordered_before: String(event.isOrderedBefore).toLowerCase() === "true",
+        source: normalizedType === "easyreorder" ? "easy_reorder" : normalizedType === "topsellers" ? "top_sellers" : "store_content",
+      });
+    });
+    remaining -= products.length;
+    sections.push({
+      type: section.type,
+      title: section.data?.title,
+      slug: section.data?.slug,
+      collection_type: collectionType,
+      products,
+    });
+    if (!remaining) break;
+  }
+  const products = sections.flatMap((section) => section.products);
+  return { kind, count: products.length, sections, products };
+}
+
+export function compactStoreOrderOptions({ fees, restrictions, info, similar }) {
+  const feeData = fees?.data ?? fees ?? {};
+  const similarStores = similar?.stores ?? similar?.data?.stores ?? [];
+  return {
+    handling_strategy: "DELIVERY",
+    fee_information: feeData.feesInformation?.plainText,
+    minimum_basket_ranges: (feeData.ranges || []).map((range) => cleanObject({
+      lower_bound: range.lowerBound,
+      upper_bound: range.upperBound,
+      upper_bound_text: range.upperBoundInfo?.displayText,
+      surcharge: range.surchargeInfo?.displayText,
+      surcharge_strategy: range.surchargeStrategy,
+      description: range.plainText,
+      success_text: range.successText,
+    })),
+    restrictions_title: restrictions?.title,
+    restrictions: (restrictions?.restrictions || []).map((restriction) => cleanObject({
+      id: restriction.id,
+      text: restriction.text ?? restriction.description,
+      link: restriction.hyperlink?.url,
+    })),
+    store_information: (info?.sections || []).map((section) => cleanObject({
+      type: section.type,
+      text: section.data?.text ?? section.data?.label ?? section.data?.title,
+    })).filter((section) => section.text),
+    similar_stores: similarStores.map(compactStore),
+    boundary: "Read-only pre-check. This does not create a basket, enter checkout, book a slot, pay, or place an order.",
+  };
+}
+
 export function compactProductView(data) {
   const meta = data?.data?.metadata?.product ?? data?.metadata?.product ?? data?.product ?? data;
   const addEnabled = productAddEnabled(data);
@@ -884,19 +1040,174 @@ export function compactOrder(o) {
 
 export function compactOrderDetail(o) {
   if (!o) return null;
-  const lines = o.products || o.orderProducts || o.items || o.order?.products || [];
+  const lines = pastOrderLines(o);
+  const date = orderDate(o);
   return {
     order_id: o.id ?? o.orderId ?? o.orderCode,
     store: o.storeName ?? o.store?.name ?? o.providerName,
-    status: o.status ?? o.orderStatus,
-    date: o.creationTime ?? o.createdAt ?? o.orderTime ?? o.deliveredAt,
+    store_id: o.storeId ?? o.store?.id,
+    store_address_id: o.storeAddressId ?? o.store?.addressId,
+    store_slug: o.storeSlug ?? o.store?.slug,
+    status: o.status ?? o.orderStatus ?? o.currentStatus?.type,
+    date: date == null ? null : new Date(date).toISOString(),
     total: o.total?.formatted ?? o.totalAmount ?? o.price,
+    handling_strategy: o.handlingStrategy?.type ?? o.handlingStrategy,
+    native_reorder_allowed: Boolean(o.reorderData?.allowed || o.reorderData?.isAllowed || o.isRemake),
+    can_go_to_store: Boolean(o.canGoToStore),
+    refunded: Boolean(o.refunded),
     items: lines.map((p) => ({
-      name: p.name ?? p.productName ?? p.title,
-      quantity: p.quantity ?? p.amount,
-      price: p.price?.formatted ?? p.price,
-      description: p.description,
+      name: p.name,
+      quantity: p.quantity,
+      price: p.price,
+      customizations: p.customizations,
+      free_product: p.free_product,
+      promotion: p.promotion,
     })),
+    pricing_breakdown: (o.pricingBreakdown?.lines || []).map((line) => cleanObject({ type: line.type, description: line.description, amount: line.amount, final_amount: line.finalAmount, note: line.note })),
+  };
+}
+
+function pastOrderLines(o) {
+  const lines = o?.boughtProducts || o?.products || o?.orderProducts || o?.items || o?.order?.products || [];
+  return (Array.isArray(lines) ? lines : []).map((line) => ({
+    raw: line,
+    name: line?.name ?? line?.productName ?? line?.title ?? null,
+    quantity: Number.parseFloat(String(line?.quantity?.increments ?? line?.quantity ?? line?.amount ?? 1).replace(",", ".")) || 1,
+    price: line?.price?.formatted ?? line?.price ?? null,
+    customizations: line?.customizationsDescription ?? line?.description ?? null,
+    free_product: Boolean(line?.freeProduct),
+    promotion: line?.promotionDescription ?? null,
+  }));
+}
+
+function orderDate(order) {
+  const value = firstValue(order?.creationTime, order?.createdAt, order?.orderTime, order?.deliveredAt, order?.currentStatus?.creationTime);
+  if (value == null) return null;
+  if (typeof value === "number" || /^\d+$/.test(String(value))) {
+    const number = Number(value);
+    return number < 10_000_000_000 ? number * 1000 : number;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizedProductName(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/(\d)\s+([a-z])\b/g, "$1$2")
+    .trim();
+}
+
+export function productMatchScore(left, right) {
+  const a = normalizedProductName(left);
+  const b = normalizedProductName(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if ((a.includes(b) || b.includes(a)) && Math.min(a.length, b.length) >= 5) return 0.9;
+  const aa = new Set(a.split(" ").filter(Boolean));
+  const bb = new Set(b.split(" ").filter(Boolean));
+  const overlap = [...aa].filter((token) => bb.has(token)).length;
+  return Number((overlap / new Set([...aa, ...bb]).size).toFixed(3));
+}
+
+function rankProductCandidates(name, products, limit) {
+  const seen = new Set();
+  return products
+    .map((product) => ({ ...product, match_score: productMatchScore(name, product.name) }))
+    .filter((product) => {
+      const key = `${product.product_id}|${product.external_id}|${product.store_product_id}`;
+      if (!product.match_score || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => b.match_score - a.match_score || String(a.name).localeCompare(String(b.name)))
+    .slice(0, Math.max(1, Math.min(Number(limit) || 3, 5)));
+}
+
+export function buildReorderPlan(order, candidatesByLine = new Map(), { maxSearches = 0, searched = 0 } = {}) {
+  const preview = compactReorderPreview(order);
+  const items = pastOrderLines(order).map((line, index) => {
+    const candidates = candidatesByLine.get(index) || [];
+    const best = candidates[0];
+    const resolved = Boolean(best?.match_score >= 0.9 && best.product_id && best.external_id && best.store_product_id && best.available !== false);
+    return {
+      index,
+      previous_name: line.name,
+      previous_quantity: line.quantity,
+      previous_customizations: line.customizations,
+      requires_option_reselection: Boolean(line.customizations),
+      resolved_current_product: resolved,
+      requires_live_product_check: resolved,
+      candidates,
+    };
+  });
+  return {
+    order_id: preview.order_id,
+    store: preview.store,
+    store_id: order?.storeId ?? order?.store?.id ?? null,
+    store_address_id: order?.storeAddressId ?? order?.store?.addressId ?? null,
+    native_reorder_allowed: preview.native_reorder_allowed,
+    items_count: items.length,
+    resolved_items: items.filter((item) => item.resolved_current_product).length,
+    unresolved_items: items.filter((item) => !item.resolved_current_product).length,
+    searches_used: searched,
+    search_limit: maxSearches,
+    can_prepare_after_review: items.length > 0 && items.every((item) => item.resolved_current_product),
+    mutates_basket: false,
+    next_step: "Inspect each selected candidate with glovo_get_product, reselect required options, obtain explicit approval, then call glovo_add_to_basket. This plan never places an order.",
+    items,
+  };
+}
+
+export function orderAnalysisFromDetails(details, { maxProducts = 50 } = {}) {
+  const products = new Map();
+  const seenOrders = new Set();
+  for (const [orderIndex, order] of details.entries()) {
+    const date = orderDate(order);
+    for (const line of pastOrderLines(order)) {
+      const key = normalizedProductName(line.name);
+      if (!key) continue;
+      const current = products.get(key) || { name: line.name, orders: 0, quantity: 0, dates: [], visible_line_amount: 0, parseable_line_amounts: 0, customizations: new Map() };
+      const orderKey = `${order?.id ?? order?.orderId ?? orderIndex}|${key}`;
+      if (!seenOrders.has(orderKey)) current.orders += 1;
+      seenOrders.add(orderKey);
+      current.quantity += line.quantity;
+      if (date != null) current.dates.push(date);
+      const amount = parseMoney(line.price);
+      if (amount != null) {
+        current.visible_line_amount += amount;
+        current.parseable_line_amounts += 1;
+      }
+      if (line.customizations) current.customizations.set(line.customizations, (current.customizations.get(line.customizations) || 0) + 1);
+      products.set(key, current);
+    }
+  }
+  const topProducts = [...products.values()].map((product) => {
+    const dates = [...new Set(product.dates)].sort((a, b) => a - b);
+    const intervals = dates.slice(1).map((date, index) => (date - dates[index]) / 86_400_000).sort((a, b) => a - b);
+    const middle = Math.floor(intervals.length / 2);
+    const median = !intervals.length ? null : intervals.length % 2 ? intervals[middle] : (intervals[middle - 1] + intervals[middle]) / 2;
+    return {
+      product: product.name,
+      orders: product.orders,
+      quantity: Number(product.quantity.toFixed(3)),
+      first_order_at: dates.length ? new Date(dates[0]).toISOString() : null,
+      last_order_at: dates.length ? new Date(dates.at(-1)).toISOString() : null,
+      average_interval_days: intervals.length ? Number((intervals.reduce((sum, value) => sum + value, 0) / intervals.length).toFixed(1)) : null,
+      median_interval_days: median == null ? null : Number(median.toFixed(1)),
+      parseable_visible_line_amounts: product.parseable_line_amounts,
+      visible_line_amount: Number(product.visible_line_amount.toFixed(2)),
+      top_customizations: [...product.customizations.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, orders]) => ({ name, orders })),
+    };
+  }).sort((a, b) => b.orders - a.orders || b.quantity - a.quantity || a.product.localeCompare(b.product)).slice(0, Math.max(1, maxProducts));
+  return {
+    analyzed_orders: details.length,
+    distinct_products: products.size,
+    top_products: topProducts,
+    limitation: "Product cadence and customization statistics cover only successfully enriched order details; card-only orders are excluded from item analysis.",
   };
 }
 

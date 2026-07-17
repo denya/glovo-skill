@@ -7,6 +7,8 @@
 - Location switching is header/session-state based for browsing; switching location must not mutate an existing basket unless the user explicitly accepts the risk.
 - Saved delivery locations are an authenticated read-only address-book resource; selecting one for browsing remains an explicit local-header update unless Glovo's current web API proves a safe account-level switch endpoint.
 - Browser login can capture access and refresh tokens from OAuth responses; refresh can rotate tokens and must persist securely outside packaged code.
-- Repeat/reorder is safe only as read-only preview unless order details expose stable current product and option identifiers. Live detail showed `boughtProducts` names/prices/quantities without product ids for the probed order, so basket rebuild is refused for unsupported lines.
+- Past details do not expose stable current product identifiers, but authenticated store content adds an `EasyReorder` carousel with current product/external/store-product IDs. A repeat plan can safely resolve candidates there, then use bounded store search for gaps; every chosen line still requires live product/option validation and explicit basket approval.
+- Glovo's web client builds an order-summary URL with `reorderUrn`, but no direct basket-only native reorder endpoint/payload is present in the audited public chunks. Do not call or claim native reorder until a current direct API contract is proven.
+- Store minimum-basket fees, restrictions, store information, and similar stores are public read-only pre-check APIs and can support new-basket research without entering checkout.
 - Claude marketplace plugin installs require a committed bundled runtime; they do not install npm dependencies from source.
 - Session files can drift permissions after manual edits; secure load must migrate to `0600` and reject malformed token state.

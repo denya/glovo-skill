@@ -9,27 +9,32 @@ const preflightOnly = process.argv.includes("--preflight");
 const mutationEnv = process.env.GLOVO_E2E_MUTATE === "1";
 const client = new GlovoClient(sessionPath).reload();
 
-async function findProduct(query) {
+async function findProduct(queries) {
   const wall = await withRetry(() => client.browseStores({ categoryId: 1, limit: 30 }), { maxRetries: 2, label: "live-e2e-browse" });
   const stores = (wall?.data?.stores?.entries || []).filter((s) => s.metadata?.storeAddressId && (s.open === true || s.availability?.status === "OPEN"));
   for (const store of stores) {
-    const search = await withRetry(() => client.searchStoreItems(store.id ?? store.storeId, store.metadata.storeAddressId, query), { maxRetries: 2, label: "live-e2e-search" });
-    const products = compactSearch(search, { storeId: String(store.id ?? store.storeId), storeAddressId: store.metadata.storeAddressId, limit: 50 }).results;
-    const product = products.find((candidate) => candidate.available !== false && candidate.external_id && candidate.store_product_id);
-    if (product) return { store, product };
+    for (const query of queries) {
+      const search = await withRetry(() => client.searchStoreItems(store.id ?? store.storeId, store.metadata.storeAddressId, query), { maxRetries: 2, label: "live-e2e-search" });
+      const products = compactSearch(search, { storeId: String(store.id ?? store.storeId), storeAddressId: store.metadata.storeAddressId, limit: 12 }).results;
+      for (const product of products.filter((candidate) => candidate.available !== false && candidate.external_id && candidate.store_product_id)) {
+        const productView = await withRetry(() => client.getProduct({ storeId: store.id ?? store.storeId, storeAddressId: store.metadata.storeAddressId, productId: product.product_id, externalId: product.external_id }), { maxRetries: 2, label: "live-e2e-candidate-product" });
+        const compact = compactProductView(productView);
+        if (compact.add_enabled === true && (compact.option_groups || []).some((group) => group.required)) return { store, product, productView };
+      }
+    }
   }
-  throw new Error(`No product found for ${query}`);
+  throw new Error("No open, enabled product with required options found in the bounded search.");
 }
 
-const pizza = await findProduct("pizza");
-const storeId = String(pizza.store.id ?? pizza.store.storeId);
-const storeAddressId = pizza.store.metadata.storeAddressId;
+const selected = await findProduct(["pizza", "fries", "burger", "chicken"]);
+const storeId = String(selected.store.id ?? selected.store.storeId);
+const storeAddressId = selected.store.metadata.storeAddressId;
 const storeDetail = await withRetry(() => client.getStore(storeId), { maxRetries: 2, label: "live-e2e-store-detail" });
 const storeCategoryId = storeCategoryIdFromStore(storeDetail);
-const productId = pizza.product.id ?? pizza.product.product_id ?? pizza.product.productId;
-const externalId = pizza.product.external_id ?? pizza.product.externalId ?? pizza.product.productExternalId;
-const storeProductId = pizza.product.store_product_id ?? pizza.product.storeProductId;
-const productView = await withRetry(() => client.getProduct({ storeId, storeAddressId, productId, externalId }), { maxRetries: 2, label: "live-e2e-product" });
+const productId = selected.product.id ?? selected.product.product_id ?? selected.product.productId;
+const externalId = selected.product.external_id ?? selected.product.externalId ?? selected.product.productExternalId;
+const storeProductId = selected.product.store_product_id ?? selected.product.storeProductId;
+const productView = selected.productView;
 const repeatedProductView = await withRetry(() => client.getProduct({ storeId, storeAddressId, productId, externalId }), { maxRetries: 2, label: "live-e2e-product-repeat" });
 const compactProduct = compactProductView(productView);
 const productViewStoreProductId = compactProduct.store_product_id;
@@ -146,7 +151,7 @@ await withBasketRestore(client, snapshot, storeId, async () => {
   await waitForStage("remove", async () => !findTestLine(compactBasket(await client.getBasketByStore(storeId))));
   await waitForStage("remove-global", async () => assertLineAbsentFromGlobal(await client.getBaskets()));
   console.log(JSON.stringify({ event: "stage_remove", line_absent_store: true, line_absent_global: true }));
-  console.log(JSON.stringify({ event: "mutation_e2e", pizza_add_set_remove: true, required_options_validated: true, basket_options_represented: true }));
+  console.log(JSON.stringify({ event: "mutation_e2e", option_product_add_set_remove: true, required_options_validated: true, basket_options_represented: true }));
 }, { recoveryPath }).then(({ restore }) => {
   console.log(JSON.stringify({ event: "restore_ok", fingerprint: restore.fingerprint }));
 }).catch((error) => {
