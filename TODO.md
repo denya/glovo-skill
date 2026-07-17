@@ -34,5 +34,5 @@
 - [x] MIT license and attribution.
 - [x] README with install/auth/use commands and safety notes.
 - [x] Local verified commit ready for public push.
-- [x] Public GitHub repo created under `denya`; initial push and published-form smoke remain.
+- [x] Public GitHub repo created and initial branch pushed under `denya`; final follow-up push and published-form smoke remain.
 - [x] Final local report: commit, feature matrix, E2E evidence, limitations, negative findings.
