@@ -10,7 +10,7 @@
 - [x] Replace the stale local Codex v0.1.0 skill/extension without touching `~/.glovo/session.json`; register the current bundled MCP runtime.
 - [x] Prove a fresh Codex configuration loads the current skill and full 27-tool surface with no browser and no v0.1.0 drift.
 - [x] Run focused contracts, full verification, sanitized live reads, dependency/secret/privacy/no-browser gates, and exact session/basket checks.
-- [ ] Bump aligned release metadata, commit, push, tag, publish MCPB/checksum, and install-test public Codex and Claude artifacts.
+- [x] Bump aligned release metadata, commit, push, tag, publish MCPB/checksum, and install-test public Codex and Claude artifacts.
 
 ## v0.2.0 Suggestions
 
