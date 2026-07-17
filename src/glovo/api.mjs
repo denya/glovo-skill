@@ -413,16 +413,6 @@ export class GlovoClient {
     });
   }
 
-  removeProducts(basketId, basketProductIds) {
-    const id = this.session?.customerId || this.session?.customer?.id;
-    if (!id) throw new AuthError("No customer id in Glovo session. Run glovo_login again.");
-    const encodedProductIds = basketProductIds.map((value) => encodeURIComponent(value)).join(",");
-    return this.call(`/v1/authenticated/customers/${id}/baskets/${encodeURIComponent(basketId)}/products/${encodedProductIds}`, {
-      method: "DELETE",
-      auth: true,
-    });
-  }
-
   deleteBasket(basketId) {
     const id = this.session?.customerId || this.session?.customer?.id;
     if (!id) throw new AuthError("No customer id in Glovo session. Run glovo_login again.");
