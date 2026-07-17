@@ -19,7 +19,9 @@ Session files are written with mode `0600`. Tokens, exact coordinates, order pay
 
 ## Claude Desktop MCPB
 
-Download the `.mcpb` from the latest GitHub release, open it, and approve the extension in Claude Desktop. The package uses the same bundled `dist/server.mjs` runtime.
+Download [`glovo-skill-0.1.1.mcpb`](https://github.com/denya/glovo-skill/releases/download/v0.1.1/glovo-skill-0.1.1.mcpb), open it, and approve the extension in Claude Desktop. The package uses the same bundled `dist/server.mjs` runtime.
+
+SHA256: `1dbbe5207606671d58b474d7056b5ed492ff72a6ecd51247b22d2d1b2b4e479d`
 
 To build the Desktop package from source instead:
 

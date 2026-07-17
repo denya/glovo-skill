@@ -35,4 +35,5 @@
 - [x] README with install/auth/use commands and safety notes.
 - [x] Local verified commit ready for public push.
 - [x] Public GitHub repo created and final verified branch pushed under `denya`.
+- [x] GitHub release `v0.1.1` published with verified Claude Desktop MCPB asset.
 - [x] Final local report: commit, feature matrix, E2E evidence, limitations, negative findings.
