@@ -1,7 +1,7 @@
 {
   "name": "glovo-mcp",
-  "version": "0.1.2",
-  "description": "Local Glovo MCP server for saved locations, stores, products, order history, and basket preparation. No checkout.",
+  "version": "0.2.0",
+  "description": "Glovo MCP server for personalized live suggestions, products, order history, and basket preparation. No checkout.",
   "type": "module",
   "main": "dist/server.mjs",
   "scripts": {
@@ -12,10 +12,12 @@
     "live:e2e": "node scripts/live-e2e.mjs",
     "live:e2e:preflight": "node scripts/live-e2e.mjs --preflight",
     "live:e2e:mutate": "node scripts/live-e2e.mjs --mutate",
-    "test": "node tests/session-store.test.mjs && node tests/refresh-rotation.test.mjs && node tests/order-contract.test.mjs && node tests/reorder-preview.test.mjs && node tests/error-redaction.test.mjs && node tests/browser-boundary.test.mjs && node tests/location-contract.test.mjs && node tests/basket-payload.test.mjs && node tests/basket-remove.test.mjs && node tests/basket-restore.test.mjs",
+    "test": "node tests/session-store.test.mjs && node tests/refresh-rotation.test.mjs && node tests/order-contract.test.mjs && node tests/reorder-preview.test.mjs && node tests/error-redaction.test.mjs && node tests/browser-boundary.test.mjs && node tests/location-contract.test.mjs && node tests/basket-payload.test.mjs && node tests/basket-remove.test.mjs && node tests/basket-restore.test.mjs && node tests/venue-model.test.mjs && node tests/suggestions.test.mjs",
+    "eval:venues": "node scripts/evaluate-venue-model.mjs",
     "scan:secrets": "node scripts/secret-scan.mjs",
     "test:mcp": "npm run build && node scripts/test-mcp.mjs",
     "test:mcp:auth": "npm run build && node scripts/test-mcp.mjs --auth",
+    "test:mcp:suggestions": "npm run build && node scripts/test-mcp.mjs --auth --suggestions",
     "validate:plugin": "claude plugin validate . --strict",
     "validate:mcpb": "npx -y @anthropic-ai/mcpb validate manifest.json",
     "pack:mcpb": "npx -y @anthropic-ai/mcpb pack .",
@@ -25,6 +27,7 @@
   },
   "keywords": [
     "glovo",
+    "recommendations",
     "grocery",
     "food-delivery",
     "shopping",

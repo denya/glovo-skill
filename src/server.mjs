@@ -24,6 +24,7 @@ import {
   orderStatsFromCards,
 } from "./glovo/api.mjs";
 import { runLogin } from "./auth/login.mjs";
+import { getSuggestions } from "./glovo/suggestions.mjs";
 import SHOPPING_GUIDE from "./shopping-guide.md";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -53,7 +54,7 @@ const INSTRUCTIONS = `Use Glovo read-only tools before mutating the real basket.
 Do not checkout or pay. Basket tools only prepare the user's real Glovo basket for later human review.
 If auth is missing or expired, call glovo_login and let the user sign in in the browser.`;
 
-const server = new McpServer({ name: "glovo", version: "0.1.2" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "glovo", version: "0.2.0" }, { instructions: INSTRUCTIONS });
 
 server.registerTool(
   "glovo_get_shopping_guide",
@@ -188,6 +189,38 @@ server.registerTool(
     });
     return json(compactStoreWall(data));
   }),
+);
+
+server.registerTool(
+  "glovo_get_suggestions",
+  {
+    title: "Personalized live suggestions",
+    description: "Turn structured repeat, explore, or balanced food intent into 3-5 read-only live Glovo choices. Uses full card-level venue history, re-fetches current products/options, and can attach optional Google Maps quality evidence. Never changes the basket.",
+    inputSchema: {
+      mode: z.enum(["repeat", "explore", "balanced"]).optional().describe("Repeat familiar venues, explore new venues, or mix both. Default balanced."),
+      query: z.string().min(1).describe("Food or product keywords, for example pizza, sushi, or burger."),
+      venue_query: z.string().min(1).optional().describe("Optional venue name constraint, for example a favorite restaurant."),
+      item_mode: z.enum(["repeat", "different", "any"]).optional().describe("Prefer Easy Reorder items, different items at a familiar venue, or any matching live item."),
+      known_liked_only: z.boolean().optional().describe("Apply only when the user explicitly says a venue is liked; historical purchase alone does not prove satisfaction."),
+      quality_preference: z.enum(["personal", "glovo", "google", "balanced"]).optional().describe("Evidence preference. Google remains display-only because it is not part of the backtested personalized model."),
+      novelty_tolerance: z.number().min(0).max(1).optional().describe("Exploration share for balanced intent. Default 0.4."),
+      max_choices: z.number().int().min(3).max(5).optional().describe("Return 3-5 choices. Default 5; fewer may be returned when current products are unavailable."),
+      include_google_quality: z.boolean().optional().describe("Request optional Google Places quality evidence for the final shortlist. Requires configured GOOGLE_MAPS_API_KEY."),
+      include_google_reviews: z.boolean().optional().describe("Explicitly request Google review text for at most the first three matched finalists. May increase Places billing; preserves author/source attribution."),
+    },
+  },
+  tool(async (args, c) => json(await getSuggestions(c, {
+    mode: args.mode,
+    query: args.query,
+    venueQuery: args.venue_query,
+    itemMode: args.item_mode,
+    knownLikedOnly: args.known_liked_only,
+    qualityPreference: args.quality_preference,
+    noveltyTolerance: args.novelty_tolerance,
+    maxChoices: args.max_choices,
+    includeGoogle: args.include_google_quality,
+    includeGoogleReviews: args.include_google_reviews,
+  }))),
 );
 
 server.registerTool(

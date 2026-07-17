@@ -2,8 +2,8 @@
   "manifest_version": "0.3",
   "name": "glovo",
   "display_name": "Glovo",
-  "version": "0.1.2",
-  "description": "Read saved Glovo locations, browse stores, inspect products and options, read order history, and prepare baskets without checkout.",
+  "version": "0.2.0",
+  "description": "Get personalized live Glovo suggestions, inspect products and history, and prepare baskets without checkout.",
   "author": {
     "name": "Denya"
   },
@@ -16,9 +16,10 @@
   "support": "https://github.com/denya/glovo-skill/issues",
   "license": "MIT",
   "privacy_policies": [
-    "https://glovoapp.com/en/legal/privacy"
+    "https://glovoapp.com/en/legal/privacy",
+    "https://policies.google.com/privacy"
   ],
-  "keywords": ["glovo", "grocery", "food-delivery", "shopping", "basket", "orders", "mcp"],
+  "keywords": ["glovo", "recommendations", "grocery", "food-delivery", "shopping", "basket", "orders", "mcp"],
   "server": {
     "type": "node",
     "entry_point": "dist/server.mjs",
@@ -26,8 +27,18 @@
       "command": "node",
       "args": ["${__dirname}/dist/server.mjs"],
       "env": {
-        "GLOVO_SESSION_PATH": "${HOME}/.glovo/session.json"
+        "GLOVO_SESSION_PATH": "${HOME}/.glovo/session.json",
+        "GOOGLE_MAPS_API_KEY": "${user_config.google_maps_api_key}"
       }
+    }
+  },
+  "user_config": {
+    "google_maps_api_key": {
+      "type": "string",
+      "title": "Google Maps API key",
+      "description": "Optional restricted Places API (New) key for shortlist quality evidence.",
+      "sensitive": true,
+      "required": false
     }
   },
   "tools_generated": true,

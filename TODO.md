@@ -1,5 +1,20 @@
 # Glovo Skill Release TODO
 
+## v0.2.0 Suggestions
+
+- [x] Add one read-only `glovo_get_suggestions` tool for repeat, explore, and balanced intents.
+- [x] Rank familiar venues with the validation-selected multi-scale recency model; expose score components and full card-history coverage.
+- [x] Resolve every proposed item against the current Glovo catalog and preserve required option groups for later review.
+- [x] Keep product learning disabled until detailed-order coverage supports a real chronological holdout.
+- [x] Add optional direct Google Places (New) enrichment for at most five finalists with strict field masks and conservative matching.
+- [x] Degrade truthfully when `GOOGLE_MAPS_API_KEY` is absent or a place match is ambiguous.
+- [x] Document the aggregate private-corpus evaluation without committing private orders, locations, or products.
+- [x] Add deterministic repeat/explore/options/Google fallback and ambiguity tests.
+- [x] Run checkout-free authenticated API-only suggestion E2E; do not mutate the basket.
+- [x] Bump and align all runtime/package metadata to `0.2.0`.
+- [x] Run full build, tests, MCP smoke, plugin/MCPB validation, audit, secret/privacy/no-browser checks, and isolated installs.
+- [ ] Commit, push, tag `v0.2.0`, publish the validated MCPB/checksum, then re-download and install-test the public artifact.
+
 ## Build
 
 - [x] Create clean public repo from installed local extension source.

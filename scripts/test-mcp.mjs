@@ -4,9 +4,11 @@ import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { canonicalBasketState } from "./basket-safety.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const auth = process.argv.includes("--auth");
+const suggestions = process.argv.includes("--suggestions");
+const auth = process.argv.includes("--auth") || suggestions;
 const tempSessionDir = auth ? null : mkdtempSync(`${os.tmpdir()}/glovo-mcp-smoke-`);
 const sessionPath = auth ? process.env.GLOVO_SESSION_PATH : `${tempSessionDir}/session.json`;
 
@@ -24,7 +26,7 @@ const { tools } = await client.listTools();
 console.log("TOOLS:", tools.map((t) => t.name).join(", "));
 
 async function call(name, args = {}) {
-  const result = await client.callTool({ name, arguments: args });
+  const result = await client.callTool({ name, arguments: args }, undefined, { timeout: 240_000 });
   const text = result.content?.map((c) => c.text).join("\n") ?? "";
   console.log(`\n# ${name}${result.isError ? " [isError]" : ""}`);
   if (result.isError) {
@@ -72,6 +74,19 @@ function summarize(name, parsed) {
   if (name === "glovo_get_store_recommendations") return { ok: true, count: parsed.count, sections: parsed.sections?.length || 0, current_ids_complete: (parsed.products || []).every((product) => Boolean(product.product_id && product.external_id && product.store_product_id)), exposes_tokens: /token/i.test(JSON.stringify(parsed)) };
   if (name === "glovo_get_store_order_options") return { ok: true, fee_ranges: parsed.minimum_basket_ranges?.length || 0, restrictions: parsed.restrictions?.length || 0, store_information: parsed.store_information?.length || 0, similar_stores: parsed.similar_stores?.length || 0, checkout_free: /does not create a basket/i.test(parsed.boundary || "") };
   if (name === "glovo_search_store_items") return { ok: true, count: parsed.count, total: parsed.total };
+  if (name === "glovo_get_suggestions") return {
+    ok: true,
+    choices: parsed.choices?.length || 0,
+    order_cards: parsed.coverage?.order_cards_discovered,
+    cursor_pages: parsed.coverage?.order_cursor_pages,
+    cursor_stop: parsed.coverage?.order_cursor_stop,
+    model: parsed.model?.name,
+    holdout_orders: parsed.model?.holdout?.final_test_orders,
+    products_revalidated: (parsed.choices || []).every((choice) => choice.product?.add_enabled === true),
+    options_preserved: (parsed.choices || []).every((choice) => Array.isArray(choice.product?.option_groups)),
+    google_available: Boolean(parsed.google_quality?.available),
+    mutates_basket: Boolean(parsed.mutates_basket),
+  };
   if (name === "glovo_get_purchase_history") return { ok: true, count: parsed.count, has_next_offset: parsed.next_offset != null, raw_shape: parsed.raw_shape };
   if (name === "glovo_get_order_items") return { ok: true, items: parsed.items?.length || 0, has_store_ids: Boolean(parsed.store_id && parsed.store_address_id), has_pricing_breakdown: Array.isArray(parsed.pricing_breakdown), native_reorder_allowed: Boolean(parsed.native_reorder_allowed) };
   if (name === "glovo_get_order_stats") return { ok: true, orders: parsed.orders, pages: parsed.discovery?.pages, stopped_reason: parsed.discovery?.stopped_reason, stores: parsed.stores };
@@ -84,6 +99,36 @@ function summarize(name, parsed) {
 
 await call("glovo_auth_status");
 await call("glovo_get_location");
+if (suggestions) {
+  const basketBefore = await call("glovo_get_basket", {});
+  if (basketBefore.result.isError) throw new Error("Could not snapshot basket before suggestion smoke.");
+  const canonicalBefore = canonicalBasketState(JSON.parse(basketBefore.text || "[]"));
+  const result = await call("glovo_get_suggestions", {
+    mode: "repeat",
+    query: "pizza",
+    item_mode: "repeat",
+    quality_preference: "personal",
+    max_choices: 3,
+    include_google_quality: false,
+  });
+  if (result.result.isError) process.exitCode = 3;
+  else {
+    const parsed = JSON.parse(result.text || "{}");
+    if ((parsed.choices?.length || 0) < 3 || parsed.mutates_basket !== false) {
+      throw new Error("Suggestion smoke did not return three checkout-free choices.");
+    }
+  }
+  const basketAfter = await call("glovo_get_basket", {});
+  if (basketAfter.result.isError) throw new Error("Could not verify basket after suggestion smoke.");
+  const canonicalAfter = canonicalBasketState(JSON.parse(basketAfter.text || "[]"));
+  if (JSON.stringify(canonicalAfter) !== JSON.stringify(canonicalBefore)) {
+    throw new Error("Suggestion smoke changed the authenticated basket.");
+  }
+  console.log(JSON.stringify({ basket_unchanged: true }));
+  await client.close();
+  console.log("\nOK - MCP suggestion test complete.");
+  process.exit(process.exitCode || 0);
+}
 await call("glovo_search_locations", { query: "carrer mallorca", limit: 3 });
 const browse = await call("glovo_browse_stores", { category_id: 4, limit: 5 });
 if (browse.result.isError) {

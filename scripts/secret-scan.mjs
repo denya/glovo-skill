@@ -11,6 +11,7 @@ const patterns = [
   [/refreshToken["']?\s*[:=]\s*["'][^"']+["']/, "refresh token"],
   [/accessToken["']?\s*[:=]\s*["'][^"']+["']/, "access token"],
   [/Authorization["']?\s*[:=]\s*["'][^"']+["']/, "authorization header"],
+  [/AIza[0-9A-Za-z_-]{35}/, "Google Maps API key"],
 ];
 
 for (const file of files) {

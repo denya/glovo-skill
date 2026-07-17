@@ -1,4 +1,5 @@
 .git/
+.gitleaks.toml
 .claude/
 .claude-plugin/
 .mcp.json

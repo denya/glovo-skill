@@ -1,39 +1,36 @@
 # Glovo Skill and MCP
 
-Open Claude integration for Glovo's live stores, menus, current reorder recommendations, product options, authenticated order analysis, saved delivery locations, and real basket preparation. It intentionally has no checkout, payment, delivery-slot booking, or order-placement tool. Browser use is limited to explicit session bootstrap; all location, store, product, history, research, reorder planning, and basket operations use Glovo HTTP APIs through MCP.
+Open Claude and Codex integration for personalized live Glovo suggestions, saved delivery locations, stores, products and modifiers, authenticated order analysis, repeat planning, and real basket preparation. It has no checkout, payment, delivery-slot booking, or order-placement tool. Browser use is limited to explicit session bootstrap; every suggestion, location, catalog, history, research, repeat-plan, and basket operation uses Glovo HTTP APIs through MCP.
 
 ## Install in Claude Code
 
-Requires current [Claude Code](https://code.claude.com/docs/en/setup), Node.js 18 or newer, and installed Google Chrome for optional login.
+Requires current [Claude Code](https://code.claude.com/docs/en/setup), Node.js 18 or newer, and Google Chrome only if interactive login is needed.
 
 ```bash
 claude plugin marketplace add denya/glovo-skill
 claude plugin install glovo@denya-glovo
 ```
 
-Start or reload Claude Code, then inspect `/mcp` for the `glovo` server. The first account action can call `glovo_login`; that explicit customer login tool may open a dedicated Chrome login window only for session bootstrap. After a session is saved, normal operations use the direct API.
+Reload Claude Code and inspect `/mcp` for `glovo`. The explicit `glovo_login` tool may open a dedicated Chrome login window for session bootstrap. Once saved, normal operations use the direct API. Claude Code stores session state at `${CLAUDE_PLUGIN_DATA}/session.json` with a `0700` parent directory and `0600` file.
 
-Claude Code stores session state in its private plugin-data directory via `${CLAUDE_PLUGIN_DATA}/session.json`; local development uses `~/.glovo/session.json`. Session files are written with mode `0600`.
+Optional Google Maps quality evidence is configured after installation through `/plugin` -> **Installed** -> **Glovo** -> **Configure**. Leave it blank to use the complete personalized and Glovo-only path.
 
 ## Install in Claude Desktop
 
-Download the v0.1.2 installer:
+**[Download Glovo v0.2.0 for Claude Desktop (.mcpb)](https://github.com/denya/glovo-skill/releases/download/v0.2.0/glovo-skill-0.2.0.mcpb)**
 
-**[Download Glovo v0.1.2 for Claude Desktop (.mcpb)](https://github.com/denya/glovo-skill/releases/download/v0.1.2/glovo-skill-0.1.2.mcpb)**
+[Release notes and checksum](https://github.com/denya/glovo-skill/releases/tag/v0.2.0)
 
-[Release notes and checksum](https://github.com/denya/glovo-skill/releases/tag/v0.1.2)
+SHA256: published in the release notes; the main-branch README is updated with the verified digest after asset publication.
 
-SHA256: `f3b4ac5dfab66ceeb121e0d74bebd6084e13887ce1d5cc3f616cca611ae35949`
-
-1. Download `glovo-skill-0.1.2.mcpb` from the link above.
+1. Download `glovo-skill-0.2.0.mcpb`.
 2. Open Claude Desktop on macOS.
 3. Go to **Settings -> Extensions -> Advanced settings -> Install Extension...**.
-4. Select `glovo-skill-0.1.2.mcpb` and approve the installation.
-5. Ask Claude to use Glovo. Chrome opens only when account authorization is explicitly requested.
+4. Select the MCPB and approve installation.
+5. Optionally enter a restricted Google Maps Platform key when prompted.
+6. Ask Claude to check Glovo authorization or make a read-only suggestion.
 
-The Desktop package uses the same bundled `dist/server.mjs` runtime as Claude Code. Its manifest stores tokens and location headers in `~/.glovo/session.json` with private file permissions, not in the bundle.
-
-To build the same package from source instead:
+The Desktop package uses the same bundled `dist/server.mjs` runtime. It stores Glovo session state in `~/.glovo/session.json`, not in the bundle. To reproduce the package from source:
 
 ```bash
 git clone https://github.com/denya/glovo-skill.git
@@ -44,84 +41,109 @@ npm run validate:mcpb
 npm run pack:mcpb
 ```
 
-Install the generated `.mcpb` through **Settings -> Extensions -> Advanced settings -> Install Extension...**.
+## Install in Codex
+
+Codex uses the same local stdio MCP runtime and skill instructions:
+
+```bash
+git clone https://github.com/denya/glovo-skill.git ~/.local/share/glovo-skill
+cd ~/.local/share/glovo-skill
+npm ci
+npm run build
+codex mcp add glovo \
+  --env GLOVO_SESSION_PATH="$HOME/.glovo/session.json" \
+  -- node "$PWD/dist/server.mjs"
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills/glovo"
+cp skills/glovo/SKILL.md "${CODEX_HOME:-$HOME/.codex}/skills/glovo/SKILL.md"
+```
+
+Restart Codex, then ask it to use Glovo. Optional Google enrichment can be added by registering `GOOGLE_MAPS_API_KEY` as another MCP environment value; do not put the key in the repository or a shared script.
 
 ## What You Can Ask
 
-Useful requests include:
+- "Pizza again: give me three live choices based on places I actually ordered from."
+- "Try a new pizza from a high-quality place, with Google evidence if configured."
+- "Use a favorite restaurant but suggest a different current item."
+- "Show why each choice was selected, the history coverage, current price, availability, and required options."
+- "Show my saved delivery locations and whether the current Glovo location matches one."
+- "Find open supermarkets near the selected location and compare delivery minimums."
+- "Read my full order history and separate card-level venue statistics from detail-backed product statistics."
+- "Resolve my previous order against the current catalog without changing the basket."
+- "After I approve the exact product and modifiers, prepare the basket for my review."
 
-- "Show my saved Glovo delivery locations and tell me whether the current one matches my saved home address."
-- "Use this saved address as the Glovo location, then browse nearby supermarkets."
-- "Find open grocery stores near the selected location."
-- "Search a store menu for pizza and inspect required options before adding anything."
-- "Show my current Easy Reorder products and this store's minimum basket, surcharge, and restrictions."
-- "Show the product details and valid modifier choices for this item."
-- "Read my complete Glovo order history and analyze product frequency, cadence, customizations, and top stores with explicit detail coverage."
-- "Resolve my last order against current products, show unresolved lines, and re-check required options before adding anything."
-- "Prepare this basket only after I approve each real basket mutation."
+`glovo_get_suggestions` accepts repeat, explore, or balanced intent and returns 3-5 labeled live choices. It never mutates the basket. The agent must use the separate product/options tools and obtain explicit approval before any basket change.
 
-For private address matching, pass the address text at runtime to `glovo_get_saved_locations.match_text`. Do not commit or paste tokens, session files, or raw API payloads.
+## Recommendation Evidence
+
+Venue ranking uses all completed order cards and the validation-selected 5/20/80-event multi-scale recency model. On the untouched 137-order final window it achieved Precision@5 `0.083`, Recall@5 `0.416`, and NDCG@5 `0.271`; the popularity baseline reached Recall@5 `0.204` and NDCG@5 `0.160`. Selection used a contiguous 70/15/15 chronological split and the simplest model within one validation standard error.
+
+This is holdout-supported evidence, not a claim of scientific proof. Product learning is deliberately disabled: only 15 orders had successful detail enrichment, which is insufficient for a defensible learned item model. Product choices therefore resolve against the current Glovo catalog, authenticated Easy Reorder, and Top Sellers, with required options re-fetched before presentation.
+
+See [the aggregate evaluation and reproduction protocol](docs/RECOMMENDATION-EVALUATION.md). Run it against the authenticated card history without writing raw orders:
+
+```bash
+npm run eval:venues
+```
+
+## Optional Google Places
+
+Google Places API (New) enriches only the final Glovo shortlist, normally at most five venues. Name and proximity must agree conservatively; ambiguous matches receive no Google attachment. Ratings use transparent Bayesian shrinkage with a 4.2 prior and weight 100 rather than raw averages. Google evidence is display-only and does not alter the backtested personalized rank.
+
+Review text is fetched only when `include_google_reviews=true`, for at most three finalists. Responses preserve author attribution, review and Maps links, source notices, and Google's ordering caveat. The runtime does not persist ratings, reviews, or result payloads; it stores no Google data and uses an ephemeral request only.
+
+No key is required. Without `GOOGLE_MAPS_API_KEY`, personalized Glovo suggestions still work and report that external quality evidence is unavailable. If enabling it:
+
+- Restrict the key to **Places API (New)** and the environments that run this local MCP; rotate it if exposed.
+- Review [API security guidance](https://developers.google.com/maps/api-security-best-practices), [usage and billing](https://developers.google.com/maps/documentation/places/web-service/usage-and-billing), and [current pricing](https://developers.google.com/maps/billing-and-pricing/pricing). Ratings/count fields and review details can trigger higher Places SKUs; review retrieval is therefore explicit.
+- Preserve Google Maps attribution and source URIs under the [Places policies](https://developers.google.com/maps/documentation/places/web-service/policies).
+- Check the [Google Maps Platform EEA Terms](https://cloud.google.com/maps-platform/terms/maps-eea) if your billing account is in the EEA; terms and permitted use can differ.
+
+[Maps Grounding Lite](https://developers.google.com/maps/ai/grounding-lite) can be installed separately for free-form place discovery, but it is not a dependency and does not replace the direct, bounded Places enrichment used here.
 
 ## Test the Local MCP
-
-Build and verify without touching a real account:
 
 ```bash
 git clone https://github.com/denya/glovo-skill.git
 cd glovo-skill
 npm ci
 npm run verify
-```
-
-Run it as a local Claude Code plugin:
-
-```bash
 claude --plugin-dir "$(pwd)"
 ```
 
-Then ask for Glovo. `npm run verify` never invokes login and never opens or navigates a browser. Authenticated smoke can be run after an explicit login:
+`npm run verify` uses an empty temporary session for the guest MCP smoke, never invokes login, and never opens or navigates a browser. After an explicit login, the sanitized authenticated read smoke is:
 
 ```bash
 npm run test:mcp:auth
-```
-
-For Claude Desktop, build the one-click local extension:
-
-```bash
-npm run pack:mcpb
 ```
 
 ## Tools
 
 | Tool | Purpose | Auth |
 | --- | --- | --- |
-| `glovo_auth_status` / `glovo_login` | Check saved session or explicitly start session bootstrap | Login only |
-| `glovo_get_location` / `glovo_set_location` | Read or set local browsing location headers | No |
-| `glovo_search_locations` / `glovo_select_location` | Search public delivery locations and select a serviceable browsing location | No |
-| `glovo_get_saved_locations` | Read saved delivery locations, infer the current saved-location match, and return explicit location args | Yes |
-| `glovo_browse_stores` | Browse live Glovo stores for the configured location | No |
-| `glovo_get_store` / `glovo_get_store_menu` | Inspect store details and menu nodes | No |
-| `glovo_get_store_recommendations` | Read authenticated Easy Reorder or Top Sellers products with current identifiers | Yes |
-| `glovo_get_store_order_options` | Read delivery minimums, surcharges, restrictions, store information, and alternatives | No |
-| `glovo_search_store_items` / `glovo_get_product` | Search products and inspect required/optional modifiers | No |
-| `glovo_get_purchase_history` / `glovo_get_order_stats` | Read order-history cursor pages and compact card-level stats | Yes |
-| `glovo_get_order_items` / `glovo_analyze_order_history` | Inspect order items, pricing lines, product frequency, cadence, and coverage | Yes |
-| `glovo_preview_reorder` / `glovo_plan_reorder` | Preview raw repeat support or resolve past lines to current catalog candidates | Yes |
-| `glovo_get_basket` | Read current basket | Yes |
-| `glovo_add_to_basket` / `glovo_set_quantity` / `glovo_remove_from_basket` | Mutate the real basket only after explicit user approval | Yes |
+| `glovo_auth_status` / `glovo_login` | Check or explicitly bootstrap a saved session | Login only |
+| `glovo_get_location` / `glovo_set_location` | Read or set local browsing-location headers | No |
+| `glovo_search_locations` / `glovo_select_location` | Find and select a serviceable public location | No |
+| `glovo_get_saved_locations` | Read saved delivery locations and current-match arguments | Yes |
+| `glovo_browse_stores` / `glovo_get_store` / `glovo_get_store_menu` | Browse current stores and menus | No |
+| `glovo_get_suggestions` | Produce personalized 3-5 current choices with optional Google evidence | Yes |
+| `glovo_get_store_recommendations` / `glovo_get_store_order_options` | Read Easy Reorder, Top Sellers, fees, restrictions, and alternatives | Yes / No |
+| `glovo_search_store_items` / `glovo_get_product` | Search current products and inspect required/optional modifiers | No |
+| `glovo_get_purchase_history` / `glovo_get_order_stats` | Read cursor-correct card history and compact statistics | Yes |
+| `glovo_get_order_items` / `glovo_analyze_order_history` | Inspect bounded detail-backed items, cadence, and coverage | Yes |
+| `glovo_preview_reorder` / `glovo_plan_reorder` | Resolve a past order into current, reviewable candidates | Yes |
+| `glovo_get_basket` | Read the current basket | Yes |
+| `glovo_add_to_basket` / `glovo_set_quantity` / `glovo_remove_from_basket` | Mutate the real basket only after explicit approval | Yes |
 
 ## Capabilities and Boundaries
 
-- Saved delivery locations are read with `GET /customer_profile/api/v1/address_book/me/addresses` and filtered to Glovo's `SAVED_ADDRESS` entries.
-- Public location search uses Glovo's address lookup APIs; saved-account location reads require authentication.
-- Store search, product lookup, history, stats, reorder preview, basket reads, and basket writes are direct API calls. They do not drive, tap, or scrape Chrome.
-- Authenticated store content exposes current Easy Reorder products with the three identifiers required by Glovo's basket contract. Guest content does not include that personalized section.
-- Store order options are read-only pre-checks. They expose current delivery minimums, surcharges, restrictions, store information, and alternatives without entering checkout.
-- Basket writes are real. Before basket tests or real edits, snapshot the current basket, mutate only after explicit approval, verify each stage, and restore on failure.
-- Order history starts with `offset=0` and follows `pagination.next.offset` exactly. Do not numerically increment offsets.
-- Full order details are quota-sensitive. `glovo_analyze_order_history` discovers cards first, enriches only a bounded recent subset, stops on 429, and reports card/detail coverage separately.
-- Past details expose names, quantities, prices, customization text, and store identifiers but not stable current product IDs. `glovo_plan_reorder` resolves each line through authenticated Easy Reorder and bounded current-store search; every chosen candidate still goes through `glovo_get_product` for availability and option revalidation before an explicitly approved `glovo_add_to_basket` call.
-- Glovo's web client exposes a `reorderUrn` navigation into order summary, but no direct basket-only native reorder endpoint/payload was proven. The MCP does not call that route or pretend it is safe.
+- All suggestion, search, location, product, history, stats, repeat-plan, and basket behavior is direct API traffic. It does not drive, tap, or scrape Chrome.
+- History pagination starts at `offset=0` and follows `pagination.next.offset` exactly. It never numerically increments a cursor.
+- Suggestions discover the complete order-card history before ranking. Product details remain a bounded, separately reported coverage layer.
+- A previous purchase proves familiarity, not satisfaction. `known_liked_only` is used only when the user explicitly supplies that preference.
+- Exploration is separate from the backtested repeat model. Novel candidates use current Glovo availability and count-aware Glovo quality; optional Google data remains clearly labeled external evidence.
+- Every chosen product is re-fetched and must have `add_enabled=true`. Three product identifiers, the store category, and all required/optional modifier identities are preserved for later basket review.
+- `glovo_plan_reorder` is read-only. Glovo exposes an order-summary navigation token, but no safe native basket-only reorder endpoint was proven, so this project does not guess one.
+- Basket writes are real. Snapshot first, obtain explicit approval, verify each mutation, and restore on test failure.
 - No checkout, payment, delivery-slot booking, or order-placement API is included.
 
 ## Verify a Checkout-Free Build
@@ -130,14 +152,12 @@ npm run pack:mcpb
 npm run verify
 ```
 
-`npm run verify` builds the bundled server, runs unit and contract tests, validates the Claude Code plugin and MCPB manifest, packs MCPB, runs the guest MCP smoke, runs a no-browser packaged-runtime registration smoke, audits dependencies, and scans for secrets.
+The gate builds the self-contained server, runs unit and contract tests, validates the Claude Code plugin and MCPB manifest, packs MCPB, runs guest MCP and isolated packaged-runtime smokes, audits dependencies, and scans for secrets and browser-boundary violations.
 
-Reversible live basket E2E is intentionally dual-gated:
+Reversible basket E2E remains separately dual-gated and is not run by release verification:
 
 ```bash
 GLOVO_E2E_MUTATE=1 npm run live:e2e:mutate
 ```
 
-The mutation E2E snapshots the current basket privately, refuses cross-store or unrestorable pre-existing lines, adds a selected product with required options, sets quantity, removes by official PATCH-zero quantity, and restores the exact original canonical basket state in `finally`.
-
-MIT licensed. Independent project; not affiliated with, endorsed by, or sponsored by Glovo.
+MIT licensed. Independent project; not affiliated with, endorsed by, or sponsored by Glovo or Google.

@@ -325,6 +325,16 @@ export class GlovoClient {
     });
   }
 
+  searchStores(query) {
+    const value = String(query || "").trim();
+    if (!value) throw new Error("Store search query is required.");
+    const params = new URLSearchParams({ searchQuery: value });
+    return this.call(`/v1/web/store_wall/search?${params.toString()}`, {
+      method: "POST",
+      body: { searchContext: { searchId: randomUUID() } },
+    });
+  }
+
   getStore(store) {
     return this.call(`/v3/stores/${encodeURIComponent(store)}?includeClosed=true&includeDisabled=false`);
   }

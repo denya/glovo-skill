@@ -1,15 +1,24 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "glovo",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "displayName": "Glovo",
-  "description": "Read saved Glovo locations, browse stores, inspect products and options, read order history, and prepare baskets without checkout.",
+  "description": "Get personalized live Glovo suggestions, inspect products and history, and prepare baskets without checkout.",
   "author": {
     "name": "Denya"
   },
   "repository": "https://github.com/denya/glovo-skill",
   "license": "MIT",
-  "keywords": ["glovo", "grocery", "food-delivery", "shopping", "basket", "orders", "mcp"],
+  "keywords": ["glovo", "recommendations", "grocery", "food-delivery", "shopping", "basket", "orders", "mcp"],
+  "userConfig": {
+    "google_maps_api_key": {
+      "type": "string",
+      "title": "Google Maps API key",
+      "description": "Optional restricted Places API (New) key for shortlist quality evidence.",
+      "sensitive": true,
+      "required": false
+    }
+  },
   "skills": "./skills/",
   "mcpServers": "./.mcp.json"
 }

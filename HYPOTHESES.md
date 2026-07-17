@@ -1,5 +1,14 @@
 # Glovo API Hypotheses
 
+## v0.2.0 Suggestions
+
+- Resolved: full cursor-correct order cards support personalized venue ranking, but not learned item ranking. Product choices come from current live Glovo catalogs until detail coverage grows.
+- Resolved: multi-scale venue recency at 5/20/80 order-event half-lives was the simplest model within one validation standard error and materially beat popularity on the untouched final window.
+- Resolved: repeat and exploration are separate objectives. Familiar venues use private history evidence; novel venues use live availability and optional external quality evidence.
+- Resolved: one structured MCP intent maps natural requests into mode, keywords, known-liked, quality, novelty, and choice count without shipping a second natural-language parser.
+- Resolved by contract tests: Google Places enrichment is optional and ephemeral, starts after Glovo candidate generation, enriches at most five, persists nothing, and refuses ambiguous name/location matches.
+- Negative decision: Bayesian-shrunk Google quality is returned as a labeled display component, not used to rerank, because no Google weight has chronological validation and a rating is not proof of personal satisfaction.
+
 - Order history pagination is cursor-based: start `offset=0`, then pass `pagination.next.offset` exactly. Numeric `offset += limit` repeats/loses pages.
 - The order-list endpoint is cheap enough for full discovery; order-detail calls are quota-limited and must be optional enrichment.
 - Product view responses contain enough option-group metadata to build add-to-basket payloads, but exact payload shape must be validated against basket API responses.

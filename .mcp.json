@@ -4,7 +4,8 @@
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"],
       "env": {
-        "GLOVO_SESSION_PATH": "${CLAUDE_PLUGIN_DATA}/session.json"
+        "GLOVO_SESSION_PATH": "${CLAUDE_PLUGIN_DATA}/session.json",
+        "GOOGLE_MAPS_API_KEY": "${user_config.google_maps_api_key}"
       }
     }
   }
