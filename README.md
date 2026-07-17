@@ -13,7 +13,7 @@ Then run `/reload-plugins` in Claude Code and inspect `/mcp` for the `glovo` ser
 
 ## Log In
 
-Ask Claude to call `glovo_login`. A Chrome window opens only for Glovo sign-in/session establishment. Session state is saved under Claude plugin data via `${CLAUDE_PLUGIN_DATA}/session.json`; local development uses `~/.glovo/session.json`.
+Ask Claude to call `glovo_login` only when session bootstrap or refresh truly needs browser sign-in. That explicit tool opens the user's real Chrome for Glovo sign-in/session establishment; automated verification does not open or navigate a separate browser. Session state is saved under Claude plugin data via `${CLAUDE_PLUGIN_DATA}/session.json`; local development uses `~/.glovo/session.json`.
 
 Session files are written with mode `0600`. Tokens, exact coordinates, order payloads, and basket payloads are not printed by the included smoke scripts. After login, all store, product, history, stats, reorder, and basket work is API-only through `GlovoClient` HTTP calls using the saved access/refresh token.
 
@@ -57,7 +57,7 @@ npm install
 npm run verify
 ```
 
-`npm run verify` builds the bundled server, runs unit/contract tests, validates the Claude Code plugin and MCPB manifest, packs MCPB, runs the guest MCP smoke, runs the isolated bundled-login smoke, audits dependencies, and scans for secrets.
+`npm run verify` builds the bundled server, runs unit/contract tests, validates the Claude Code plugin and MCPB manifest, packs MCPB, runs the guest MCP smoke, runs a no-browser packaged-runtime/login-tool registration smoke, audits dependencies, and scans for secrets.
 
 Authenticated smoke:
 
@@ -79,7 +79,7 @@ Current live mutation status: passed. Final controlled run used API-only Glovo c
 
 - No checkout, payment, or order-placement API is included.
 - Basket writes are real and should only be run after explicit confirmation.
-- Browser automation is used only for optional login/session establishment. Store search, product lookup, history, stats, reorder preview, basket operations, and E2E verification use Glovo API HTTP calls through MCP, never browser navigation, tapping, or scraping.
-- The bundled login smoke proves the packaged runtime can open Chrome, but it uses a temporary session and short timeout.
+- Browser automation is used only for explicit optional login/session establishment or refresh in the user's real Chrome. Store search, product lookup, history, stats, reorder preview, basket operations, and E2E verification use Glovo API HTTP calls through MCP, never browser navigation, tapping, or scraping.
+- The packaged-runtime smoke does not launch Chrome. It proves the shipped layout starts with `NODE_PATH` empty, includes the login/runtime support files, registers `glovo_login`, and reads auth status against an empty temporary session.
 - Full order details are rate-limited by Glovo; stats are based on card-level order pages unless detail enrichment is explicitly requested.
 - Repeat/reorder is currently read-only preview. The live tested order detail exposed item names/prices/quantities but not stable current product identifiers, so automatic basket rebuild is refused for those lines.

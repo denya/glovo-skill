@@ -1,12 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { cpSync, copyFileSync, mkdirSync, mkdtempSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path, { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const tempRoot = mkdtempSync(path.join(os.tmpdir(), "glovo-bundled-login-"));
+const tempRoot = mkdtempSync(path.join(os.tmpdir(), "glovo-packaged-runtime-"));
 mkdirSync(path.join(tempRoot, "dist"), { recursive: true });
 copyFileSync(path.join(root, "dist", "server.mjs"), path.join(tempRoot, "dist", "server.mjs"));
 for (const file of ["package.json", "browsers.json", "manifest.json", "README.md", "LICENSE"]) {
@@ -16,6 +16,14 @@ const sessionDir = path.join(tempRoot, "session");
 mkdirSync(sessionDir);
 const sessionPath = path.join(sessionDir, "session.json");
 const serverPath = process.argv[2] || path.join(tempRoot, "dist", "server.mjs");
+
+const bundledSource = readFileSync(serverPath, "utf8");
+if (!bundledSource.includes("createRequire(import.meta.url)") || !bundledSource.includes("const __dirname =")) {
+  throw new Error("Bundled server is missing the Node ESM compatibility banner required by the login/runtime package.");
+}
+JSON.parse(readFileSync(path.join(tempRoot, "package.json"), "utf8"));
+JSON.parse(readFileSync(path.join(tempRoot, "browsers.json"), "utf8"));
+JSON.parse(readFileSync(path.join(tempRoot, "manifest.json"), "utf8"));
 
 const transport = new StdioClientTransport({
   command: process.execPath,
@@ -28,19 +36,30 @@ const transport = new StdioClientTransport({
   stderr: "inherit",
 });
 
-const client = new Client({ name: "glovo-bundled-login-smoke", version: "0.0.1" });
+const client = new Client({ name: "glovo-packaged-runtime-smoke", version: "0.0.1" });
 await client.connect(transport);
 
 try {
-  const result = await client.callTool({ name: "glovo_login", arguments: { timeout_ms: 1 } });
+  const { tools } = await client.listTools();
+  const toolNames = tools.map((tool) => tool.name).sort();
+  if (!toolNames.includes("glovo_login")) throw new Error("Packaged runtime did not register glovo_login.");
+
+  const result = await client.callTool({ name: "glovo_auth_status", arguments: {} });
   const text = result.content?.map((c) => c.text).join("\n") ?? "";
-  const expectedTimeout = result.isError && /No Glovo login token detected in time/.test(text);
-  const loginNetworkRefused = result.isError && /net::ERR_CONNECTION_REFUSED at https:\/\/glovoapp\.com\/en\/login/.test(text);
-  const signedIn = !result.isError && JSON.parse(text || "{}").signed_in === true;
-  if (!expectedTimeout && !signedIn && !loginNetworkRefused) {
-    throw new Error(`Bundled login smoke did not reach Chrome login flow: ${text.replace(/\d/g, "#").slice(0, 180)}`);
-  }
-  console.log(JSON.stringify({ ok: true, bundled_login_runtime: true, chrome_navigation_reached: true, completed_login: signedIn, login_network_refused: loginNetworkRefused, node_path_empty: true }));
+  if (result.isError) throw new Error(`Packaged auth status failed: ${text.replace(/\d/g, "#").slice(0, 180)}`);
+  const parsed = JSON.parse(text || "{}");
+  if (parsed.signed_in !== false) throw new Error("Packaged no-browser smoke must use an empty temporary session.");
+
+  console.log(JSON.stringify({
+    ok: true,
+    packaged_runtime: true,
+    login_tool_registered: true,
+    no_browser_launched: true,
+    no_chrome_navigation: true,
+    node_path_empty: true,
+    temp_session: true,
+  }));
 } finally {
   await client.close();
+  rmSync(tempRoot, { recursive: true, force: true });
 }

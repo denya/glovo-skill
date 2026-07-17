@@ -19,8 +19,9 @@
     "validate:plugin": "claude plugin validate . --strict",
     "validate:mcpb": "npx -y @anthropic-ai/mcpb validate manifest.json",
     "pack:mcpb": "npx -y @anthropic-ai/mcpb pack .",
-    "test:bundled-login": "npm run build && node scripts/test-bundled-login.mjs",
-    "verify": "npm run build && npm test && npm run validate:plugin && npm run validate:mcpb && npm run pack:mcpb && npm run test:mcp && npm run test:bundled-login && npm audit --audit-level=high && npm run scan:secrets"
+    "test:packaged-runtime": "npm run build && node scripts/test-bundled-login.mjs",
+    "test:bundled-login": "npm run test:packaged-runtime",
+    "verify": "npm run build && npm test && npm run validate:plugin && npm run validate:mcpb && npm run pack:mcpb && npm run test:mcp && npm run test:packaged-runtime && npm audit --audit-level=high && npm run scan:secrets"
   },
   "keywords": [
     "glovo",

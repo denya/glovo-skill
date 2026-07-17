@@ -14,4 +14,4 @@ const apiSource = readFileSync("src/glovo/api.mjs", "utf8");
 assert.equal(apiSource.includes("await fetch("), false);
 assert.equal((apiSource.match(/globalThis\.fetch/g) || []).length, 2);
 
-console.log("browser-boundary.test: browser automation limited to login/session smoke");
+console.log("browser-boundary.test: browser automation limited to user-initiated login/session bootstrap");

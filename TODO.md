@@ -20,6 +20,7 @@
 - [x] Reorder preview test proves live-like order lines without product ids are refused for basket preparation.
 - [x] Basket payload test proves distinct product id, external id, storeProductId, and nonzero storeCategoryId survive unchanged into create-basket payload; missing fields fail before POST.
 - [x] Browser boundary/API transport tests prove Playwright is confined to login and direct API calls use explicit `globalThis.fetch`.
+- [x] Packaged-runtime smoke verifies the MCPB/login-tool layout without launching or navigating a separate browser.
 - [x] Location contract tests prove public autocomplete/resolve/serviceability URLs, no auth, capped compact output, and no-save on malformed or undeliverable locations.
 - [x] Read-only live smoke: auth, stores, search, product details, order pagination.
 - [x] MCP smoke exercises registered location and full-history/stats tools, not only client helpers.
