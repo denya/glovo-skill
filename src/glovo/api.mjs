@@ -183,6 +183,17 @@ export class GlovoClient {
     return this.call(`/customer_profile/api/v1/guest/address_book/delivery_point_info?${params.toString()}`);
   }
 
+  getSavedLocations() {
+    return this.call("/customer_profile/api/v1/address_book/me/addresses", { auth: true });
+  }
+
+  async savedLocations({ matchText } = {}) {
+    return compactSavedLocations(await this.getSavedLocations(), {
+      currentLocation: this.location(),
+      matchText,
+    });
+  }
+
   async selectLocation({ placeId, provider } = {}) {
     const resolvedRaw = await this.resolveAddress(placeId, provider);
     const resolved = compactResolvedLocation(resolvedRaw);
@@ -633,6 +644,117 @@ export function compactDeliveryPointInfo(data) {
     deliverable: deliverable === true || String(deliverable).toLowerCase() === "true",
     country_code: locationCode(src, ["countryCode", "country_code", "country.code", "address.countryCode"]),
     city_code: locationCode(src, ["cityCode", "city_code", "city.code", "address.cityCode"]),
+  };
+}
+
+function normalizeMatchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function queryMatches(haystack, query) {
+  const h = normalizeMatchText(haystack);
+  const q = normalizeMatchText(query);
+  if (!h || !q) return false;
+  if (h.includes(q)) return true;
+  const tokens = [...new Set(q.split(" ").filter((token) => token.length > 1))];
+  return tokens.length > 0 && tokens.every((token) => h.includes(token));
+}
+
+function numberClose(a, b) {
+  if (a == null || b == null) return false;
+  return Math.abs(Number(a) - Number(b)) < 0.00001;
+}
+
+function currentMatchesAddress(current, address) {
+  if (!address) return false;
+  const countryMatch = !current.countryCode || !address.countryCode || String(current.countryCode).toUpperCase() === String(address.countryCode).toUpperCase();
+  const cityMatch = !current.cityCode || !address.cityCode || String(current.cityCode).toUpperCase() === String(address.cityCode).toUpperCase();
+  const coordMatch =
+    (numberClose(current.latitude, address.latitude) && numberClose(current.longitude, address.longitude)) ||
+    (numberClose(current.latitude, address.originalLatitude) && numberClose(current.longitude, address.originalLongitude));
+  return countryMatch && cityMatch && coordMatch;
+}
+
+function savedAddressEntries(data) {
+  const entries = data?.data?.addresses ?? data?.addresses ?? asArray(data);
+  return entries
+    .filter((entry) => entry?.entryType ? entry.entryType === "SAVED_ADDRESS" : entry?.address)
+    .map((entry) => ({ entry, address: entry.address ?? entry }))
+    .filter(({ address }) => address && typeof address === "object");
+}
+
+function locationArgsFromAddress(address) {
+  const countryCode = firstValue(address.countryCode, address.country_code);
+  const cityCode = firstValue(address.cityCode, address.city_code);
+  const latitude = firstValue(address.latitude, address.lat);
+  const longitude = firstValue(address.longitude, address.lon, address.lng);
+  if (!validLocationCodes({ countryCode, cityCode }) || !validCoordinates({ latitude: Number(latitude), longitude: Number(longitude) })) return null;
+  return {
+    country_code: String(countryCode).toUpperCase(),
+    city_code: String(cityCode).toUpperCase(),
+    latitude: String(latitude),
+    longitude: String(longitude),
+  };
+}
+
+function compactSavedLocation(entry, address, { currentLocation = {}, matchText } = {}) {
+  const locationArgs = locationArgsFromAddress(address);
+  const searchable = [
+    entry.title,
+    entry.subtitle,
+    address.addressLine,
+    address.details,
+    address.tag,
+    address.kind,
+    address.cityName,
+    address.cityCode,
+    address.countryCode,
+    ...(Array.isArray(address.fields) ? address.fields.map((field) => field?.value) : []),
+  ].filter(Boolean).join(" ");
+  const explicitDefault = firstValue(entry.isDefault, entry.default, entry.defaultAddress, address.isDefault, address.default, address.defaultAddress);
+  return cleanObject({
+    id: address.id == null ? undefined : String(address.id),
+    label: firstValue(entry.title, address.tag, address.kind),
+    subtitle: firstValue(entry.subtitle, address.cityName),
+    address_line: address.addressLine,
+    details: address.details,
+    kind: address.kind,
+    tag: address.tag,
+    city: address.cityName,
+    country_code: locationArgs?.country_code ?? (address.countryCode ? String(address.countryCode).toUpperCase() : undefined),
+    city_code: locationArgs?.city_code ?? (address.cityCode ? String(address.cityCode).toUpperCase() : undefined),
+    latitude: locationArgs?.latitude,
+    longitude: locationArgs?.longitude,
+    selected: currentMatchesAddress(currentLocation, address),
+    default: explicitDefault === true || String(explicitDefault).toLowerCase() === "true",
+    matches_query: matchText ? queryMatches(searchable, matchText) : undefined,
+    set_location_args: locationArgs,
+  });
+}
+
+export function compactSavedLocations(data, { currentLocation = {}, matchText } = {}) {
+  const savedLocations = savedAddressEntries(data).map(({ entry, address }) => compactSavedLocation(entry, address, { currentLocation, matchText }));
+  const selected = savedLocations.find((location) => location.selected) || null;
+  const defaultLocation = savedLocations.find((location) => location.default) || null;
+  const matched = matchText ? savedLocations.find((location) => location.matches_query) || null : null;
+  return {
+    count: savedLocations.length,
+    current_location: cleanObject({
+      country_code: currentLocation.countryCode,
+      city_code: currentLocation.cityCode,
+      latitude: currentLocation.latitude == null ? undefined : String(currentLocation.latitude),
+      longitude: currentLocation.longitude == null ? undefined : String(currentLocation.longitude),
+      selected_saved_location_id: selected?.id ?? null,
+    }),
+    selected,
+    default: defaultLocation,
+    matched,
+    saved_locations: savedLocations,
   };
 }
 

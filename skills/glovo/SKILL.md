@@ -11,30 +11,25 @@ This skill wraps the bundled `glovo` MCP server.
 
 - Do not checkout, pay, place an order, or submit payment details; the server exposes no checkout tool.
 - Do not add, remove, set quantity, repeat, or reorder unless the user explicitly asks for a real basket change.
-- Use `glovo_preview_reorder` for repeat/reorder requests first. It is read-only and reports unsupported lines; do not rebuild a basket from past orders unless a future prepare tool explicitly validates live products and options.
-- Before basket tests or real basket edits, snapshot the current basket and restore it exactly.
 - Session state lives in plugin data or `~/.glovo/session.json`; never print or commit it.
 - Browser automation is allowed only for optional `glovo_login` / session establishment. Do not drive, tap, or scrape Chrome for store search, product lookup, order history, stats, reorder preview, basket operations, or E2E verification; use `GlovoClient` API/MCP HTTP tools with the saved access/refresh token.
 
-## Read-Only Flow
+## Route the Task
+
+- Authentication or expired tokens: use `glovo_auth_status`, then `glovo_login` only if the saved session cannot be refreshed.
+- Saved delivery address or "use my home/current address": use `glovo_get_saved_locations` first. If the user gives private address text, pass it as runtime-only `match_text`; do not write it into files. If the user wants to use a saved address, call `glovo_set_location` only with the explicit `set_location_args` returned by the saved-location tool.
+- Public address discovery: use `glovo_search_locations` and `glovo_select_location`.
+- Store or product search: confirm the intended location first, then use `glovo_browse_stores`, `glovo_get_store`, `glovo_get_store_menu`, `glovo_search_store_items`, and `glovo_get_product`.
+- Required product options: inspect `glovo_get_product`, choose valid required modifiers from the returned groups, and never synthesize product, store product, category, or modifier IDs.
+- Order history or stats: use `glovo_get_purchase_history`, `glovo_get_order_items`, and `glovo_get_order_stats`.
+- Repeat/reorder: use `glovo_preview_reorder` first. It is read-only and reports unsupported lines; do not rebuild a basket from past orders unless live products/options are validated and the user explicitly approves.
+- Basket preparation: read `glovo_get_basket`, inspect product/options, snapshot the current basket, obtain explicit approval, mutate via `glovo_add_to_basket` / `glovo_set_quantity` / `glovo_remove_from_basket`, verify the basket, and restore on test failure.
+
+## Read-Only Default
 
 Use read-only tools first:
 
-- `glovo_auth_status`
-- `glovo_login`
-- `glovo_get_location`
-- `glovo_set_location`
-- `glovo_search_locations`
-- `glovo_select_location`
-- `glovo_browse_stores`
-- `glovo_get_store`
-- `glovo_get_store_menu`
-- `glovo_search_store_items`
-- `glovo_get_product`
-- `glovo_get_purchase_history`
-- `glovo_get_order_items`
-- `glovo_preview_reorder`
-- `glovo_get_order_stats`
+`glovo_auth_status`, `glovo_get_location`, `glovo_get_saved_locations`, `glovo_search_locations`, `glovo_select_location`, `glovo_browse_stores`, `glovo_get_store`, `glovo_get_store_menu`, `glovo_search_store_items`, `glovo_get_product`, `glovo_get_purchase_history`, `glovo_get_order_items`, `glovo_preview_reorder`, and `glovo_get_order_stats`.
 
 ## Order History Pagination
 

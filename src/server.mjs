@@ -10,6 +10,7 @@ import {
   compactStore,
   compactStoreWall,
   compactLocationSearch,
+  compactSavedLocations,
   compactMenu,
   compactSearch,
   compactProductView,
@@ -50,7 +51,7 @@ const INSTRUCTIONS = `Use Glovo read-only tools before mutating the real basket.
 Do not checkout or pay. Basket tools only prepare the user's real Glovo basket for later human review.
 If auth is missing or expired, call glovo_login and let the user sign in in the browser.`;
 
-const server = new McpServer({ name: "glovo", version: "0.1.1" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "glovo", version: "0.1.2" }, { instructions: INSTRUCTIONS });
 
 server.registerTool(
   "glovo_get_shopping_guide",
@@ -102,6 +103,18 @@ server.registerTool(
     longitude: args.longitude,
     languageCode: args.language_code,
   }))),
+);
+
+server.registerTool(
+  "glovo_get_saved_locations",
+  {
+    title: "Get saved delivery locations",
+    description: "Read authenticated saved Glovo delivery locations and identify the current saved-location match. Read-only; does not change location headers or baskets.",
+    inputSchema: {
+      match_text: z.string().min(3).optional().describe("Optional private address text to match against saved locations. Not persisted."),
+    },
+  },
+  tool(async ({ match_text }, c) => json(compactSavedLocations(await c.getSavedLocations(), { currentLocation: c.location(), matchText: match_text }))),
 );
 
 server.registerTool(

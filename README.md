@@ -1,71 +1,129 @@
-# Glovo Claude Skill
+# Glovo Skill and MCP
 
-Claude Code plugin and MCP server for Glovo. It can browse live stores, inspect menus and products, validate product modifiers, read authenticated order history with cursor pagination, and prepare a real basket. It does not expose checkout, payment, or order-placement tools.
+Open Claude integration for Glovo's live stores, menus, product options, authenticated order history, saved delivery locations, and real basket preparation. It intentionally has no checkout, payment, delivery-slot booking, or order-placement tool. Browser use is limited to explicit session bootstrap; all location, store, product, history, stats, reorder preview, and basket operations use Glovo HTTP APIs through MCP.
 
-## Install In Claude Code
+## Install in Claude Code
+
+Requires current [Claude Code](https://code.claude.com/docs/en/setup), Node.js 18 or newer, and installed Google Chrome for optional login.
 
 ```bash
 claude plugin marketplace add denya/glovo-skill
 claude plugin install glovo@denya-glovo
 ```
 
-Then run `/reload-plugins` in Claude Code and inspect `/mcp` for the `glovo` server.
+Start or reload Claude Code, then inspect `/mcp` for the `glovo` server. The first account action can call `glovo_login`; that explicit customer login tool may open a dedicated Chrome login window only for session bootstrap. After a session is saved, normal operations use the direct API.
 
-## Log In
+Claude Code stores session state in its private plugin-data directory via `${CLAUDE_PLUGIN_DATA}/session.json`; local development uses `~/.glovo/session.json`. Session files are written with mode `0600`.
 
-Ask Claude to call `glovo_login` only when session bootstrap or refresh truly needs browser sign-in. That explicit tool may open a dedicated Chrome login window for session establishment; automated verification never calls it and does not open or navigate a browser. Session state is saved under Claude plugin data via `${CLAUDE_PLUGIN_DATA}/session.json`; local development uses `~/.glovo/session.json`.
+## Install in Claude Desktop
 
-Session files are written with mode `0600`. Tokens, exact coordinates, order payloads, and basket payloads are not printed by the included smoke scripts. After login, all store, product, history, stats, reorder, and basket work is API-only through `GlovoClient` HTTP calls using the saved access/refresh token.
+Download the v0.1.2 installer:
 
-## Claude Desktop MCPB
+**[Download Glovo v0.1.2 for Claude Desktop (.mcpb)](https://github.com/denya/glovo-skill/releases/download/v0.1.2/glovo-skill-0.1.2.mcpb)**
 
-Download [`glovo-skill-0.1.1.mcpb`](https://github.com/denya/glovo-skill/releases/download/v0.1.1/glovo-skill-0.1.1.mcpb), open it, and approve the extension in Claude Desktop. The package uses the same bundled `dist/server.mjs` runtime.
+[Release notes and checksum](https://github.com/denya/glovo-skill/releases/tag/v0.1.2)
 
-SHA256: `1dbbe5207606671d58b474d7056b5ed492ff72a6ecd51247b22d2d1b2b4e479d`
+SHA256: `f3b4ac5dfab66ceeb121e0d74bebd6084e13887ce1d5cc3f616cca611ae35949`
 
-To build the Desktop package from source instead:
+1. Download `glovo-skill-0.1.2.mcpb` from the link above.
+2. Open Claude Desktop on macOS.
+3. Go to **Settings -> Extensions -> Advanced settings -> Install Extension...**.
+4. Select `glovo-skill-0.1.2.mcpb` and approve the installation.
+5. Ask Claude to use Glovo. Chrome opens only when account authorization is explicitly requested.
+
+The Desktop package uses the same bundled `dist/server.mjs` runtime as Claude Code. Its manifest stores tokens and location headers in `~/.glovo/session.json` with private file permissions, not in the bundle.
+
+To build the same package from source instead:
 
 ```bash
-npm install
+git clone https://github.com/denya/glovo-skill.git
+cd glovo-skill
+npm ci
 npm run build
 npm run validate:mcpb
 npm run pack:mcpb
 ```
 
-Install the generated `.mcpb` in Claude Desktop.
+Install the generated `.mcpb` through **Settings -> Extensions -> Advanced settings -> Install Extension...**.
+
+## What You Can Ask
+
+Useful requests include:
+
+- "Show my saved Glovo delivery locations and tell me whether the current one matches my saved home address."
+- "Use this saved address as the Glovo location, then browse nearby supermarkets."
+- "Find open grocery stores near the selected location."
+- "Search a store menu for pizza and inspect required options before adding anything."
+- "Show the product details and valid modifier choices for this item."
+- "Read my Glovo order history and summarize top stores from all cursor pages."
+- "Preview whether my last order can be safely repeated without changing the basket."
+- "Prepare this basket only after I approve each real basket mutation."
+
+For private address matching, pass the address text at runtime to `glovo_get_saved_locations.match_text`. Do not commit or paste tokens, session files, or raw API payloads.
+
+## Test the Local MCP
+
+Build and verify without touching a real account:
+
+```bash
+git clone https://github.com/denya/glovo-skill.git
+cd glovo-skill
+npm ci
+npm run verify
+```
+
+Run it as a local Claude Code plugin:
+
+```bash
+claude --plugin-dir "$(pwd)"
+```
+
+Then ask for Glovo. `npm run verify` never invokes login and never opens or navigates a browser. Authenticated smoke can be run after an explicit login:
+
+```bash
+npm run test:mcp:auth
+```
+
+For Claude Desktop, build the one-click local extension:
+
+```bash
+npm run pack:mcpb
+```
 
 ## Tools
 
 | Tool | Purpose | Auth |
 | --- | --- | --- |
+| `glovo_auth_status` / `glovo_login` | Check saved session or explicitly start session bootstrap | Login only |
 | `glovo_get_location` / `glovo_set_location` | Read or set local browsing location headers | No |
 | `glovo_search_locations` / `glovo_select_location` | Search public delivery locations and select a serviceable browsing location | No |
-| `glovo_browse_stores` | Browse live Glovo stores | No |
+| `glovo_get_saved_locations` | Read saved delivery locations, infer the current saved-location match, and return explicit location args | Yes |
+| `glovo_browse_stores` | Browse live Glovo stores for the configured location | No |
 | `glovo_get_store` / `glovo_get_store_menu` | Inspect store details and menu nodes | No |
 | `glovo_search_store_items` / `glovo_get_product` | Search products and inspect required/optional modifiers | No |
-| `glovo_get_purchase_history` | Read one cursor page of order history | Yes |
-| `glovo_get_order_stats` | Walk all order pages and return compact card-level stats | Yes |
-| `glovo_get_order_items` | Read one order detail when available | Yes |
-| `glovo_preview_reorder` | Read one order detail and report whether a safe basket rebuild is possible | Yes |
+| `glovo_get_purchase_history` / `glovo_get_order_stats` | Read order-history cursor pages and compact card-level stats | Yes |
+| `glovo_get_order_items` / `glovo_preview_reorder` | Inspect an order detail or read-only repeat preview | Yes |
 | `glovo_get_basket` | Read current basket | Yes |
 | `glovo_add_to_basket` / `glovo_set_quantity` / `glovo_remove_from_basket` | Mutate the real basket only after explicit user approval | Yes |
 
-Order history starts with `offset=0` and follows `pagination.next.offset` exactly. Do not numerically increment offsets.
+## Capabilities and Boundaries
 
-## Verify
+- Saved delivery locations are read with `GET /customer_profile/api/v1/address_book/me/addresses` and filtered to Glovo's `SAVED_ADDRESS` entries.
+- Public location search uses Glovo's address lookup APIs; saved-account location reads require authentication.
+- Store search, product lookup, history, stats, reorder preview, basket reads, and basket writes are direct API calls. They do not drive, tap, or scrape Chrome.
+- Basket writes are real. Before basket tests or real edits, snapshot the current basket, mutate only after explicit approval, verify each stage, and restore on failure.
+- Order history starts with `offset=0` and follows `pagination.next.offset` exactly. Do not numerically increment offsets.
+- Full order details are rate-limited by Glovo; stats are based on card-level order pages unless detail enrichment is explicitly requested.
+- Repeat/reorder is currently read-only preview. If order detail lacks stable current product identifiers, automatic basket rebuild is refused for those lines.
+- No checkout, payment, delivery-slot booking, or order-placement API is included.
+
+## Verify a Checkout-Free Build
 
 ```bash
-npm install
 npm run verify
 ```
 
-`npm run verify` builds the bundled server, runs unit/contract tests, validates the Claude Code plugin and MCPB manifest, packs MCPB, runs the guest MCP smoke, runs a no-browser packaged-runtime/login-tool registration smoke, audits dependencies, and scans for secrets.
-
-Authenticated smoke:
-
-```bash
-npm run test:mcp:auth
-```
+`npm run verify` builds the bundled server, runs unit and contract tests, validates the Claude Code plugin and MCPB manifest, packs MCPB, runs the guest MCP smoke, runs a no-browser packaged-runtime registration smoke, audits dependencies, and scans for secrets.
 
 Reversible live basket E2E is intentionally dual-gated:
 
@@ -73,15 +131,6 @@ Reversible live basket E2E is intentionally dual-gated:
 GLOVO_E2E_MUTATE=1 npm run live:e2e:mutate
 ```
 
-The mutation E2E snapshots the current basket privately, refuses cross-store or unrestorable pre-existing lines, adds a selected pizza product, sets quantity, removes it, and restores the exact original canonical basket state in `finally`.
+The mutation E2E snapshots the current basket privately, refuses cross-store or unrestorable pre-existing lines, adds a selected product with required options, sets quantity, removes by official PATCH-zero quantity, and restores the exact original canonical basket state in `finally`.
 
-Current live mutation status: passed. Final controlled run used API-only Glovo calls, selected required modifiers, added the item, verified selected customizations, set quantity to 2, removed by official PATCH-zero quantity, verified the line absent in store/global basket reads, and restored the exact original salted basket fingerprint. Post-check showed `0` baskets / `0` lines and no recovery snapshots.
-
-## Safety Notes
-
-- No checkout, payment, or order-placement API is included.
-- Basket writes are real and should only be run after explicit confirmation.
-- Browser use is limited to session bootstrap or refresh. API research can observe the user's already-authenticated Chrome tabs when truly needed; the explicit `glovo_login` tool may open a dedicated Chrome login window. Store search, product lookup, history, stats, reorder preview, basket operations, and E2E verification use Glovo API HTTP calls through MCP, never browser navigation, tapping, or scraping.
-- The packaged-runtime smoke does not launch Chrome. It proves the shipped layout starts with `NODE_PATH` empty, includes the login/runtime support files, registers `glovo_login`, and reads auth status against an empty temporary session.
-- Full order details are rate-limited by Glovo; stats are based on card-level order pages unless detail enrichment is explicitly requested.
-- Repeat/reorder is currently read-only preview. The live tested order detail exposed item names/prices/quantities but not stable current product identifiers, so automatic basket rebuild is refused for those lines.
+MIT licensed. Independent project; not affiliated with, endorsed by, or sponsored by Glovo.

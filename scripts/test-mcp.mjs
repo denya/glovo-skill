@@ -55,6 +55,16 @@ function summarize(name, parsed) {
       has_device_context: Boolean(parsed.deviceUrn || parsed.perseusClientId || parsed.perseusSessionId),
     };
   }
+  if (name === "glovo_get_saved_locations") {
+    return {
+      ok: true,
+      count: parsed.count,
+      has_selected_saved_location: Boolean(parsed.selected),
+      has_default_saved_location: Boolean(parsed.default),
+      has_current_location: Boolean(parsed.current_location?.country_code && parsed.current_location?.city_code),
+      exposes_tokens: /token/i.test(JSON.stringify(parsed)),
+    };
+  }
   if (name === "glovo_search_locations") return { ok: true, count: parsed.count, has_place_ids: (parsed.results || []).every((entry) => Boolean(entry.place_id)), exposes_coordinates: JSON.stringify(parsed).includes("latitude") || JSON.stringify(parsed).includes("longitude") };
   if (name === "glovo_select_location") return { ok: true, selected: Boolean(parsed.selected), deliverable: Boolean(parsed.deliverable), has_city: Boolean(parsed.city_code), has_country: Boolean(parsed.country_code) };
   if (name === "glovo_browse_stores") return { ok: true, count: parsed.count, has_pagination: Boolean(parsed.pagination), category: parsed.category?.name || parsed.category?.title };
@@ -85,6 +95,7 @@ const search = await call("glovo_search_store_items", { store_id: first.store_id
 if (search.result.isError) console.log(JSON.stringify({ event: "reachability", ok: false, stage: "store_search" }));
 
 if (auth) {
+  await call("glovo_get_saved_locations", {});
   const history = await call("glovo_get_purchase_history", { limit: 3 });
   const historyParsed = history.result.isError ? null : JSON.parse(history.text || "{}");
   const firstOrder = historyParsed?.orders?.[0];
