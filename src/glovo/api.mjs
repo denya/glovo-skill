@@ -361,6 +361,18 @@ export class GlovoClient {
     return this.call(`${path}${qs.toString() ? `?${qs}` : ""}`, { auth });
   }
 
+  getStoreCatalog(storeId, storeAddressId, contentUri, { auth = true } = {}) {
+    const url = new URL(String(contentUri || ""), API);
+    if (url.origin !== API) throw new Error("Catalog content URI must use the Glovo API origin.");
+    const store = encodeURIComponent(String(storeId));
+    const address = encodeURIComponent(String(storeAddressId));
+    const prefixes = [3, 4].map((version) => `/v${version}/stores/${store}/addresses/${address}/content`);
+    if (!prefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))) {
+      throw new Error("Catalog content URI must belong to the selected store and address.");
+    }
+    return this.call(`${url.pathname}${url.search}`, { auth });
+  }
+
   getStoreFees(storeId, storeAddressId) {
     return this.call(`/v1/stores/${storeId}/addresses/${storeAddressId}/node/store_fees`);
   }
@@ -516,7 +528,7 @@ export class GlovoClient {
     return this.call(`/v3/customer/orders-list?${params.toString()}`, { auth: true });
   }
 
-  async getAllOrderCards({ limit = 15, maxPages = Infinity, pageDelayMs = 750, maxRetries = 6 } = {}) {
+  async getAllOrderCards({ limit = 15, maxPages = Infinity, pageDelayMs = 750, maxRetries = 6, stopOrderIds = null } = {}) {
     const pages = [];
     const orders = [];
     const seenCursors = new Set();
@@ -535,15 +547,21 @@ export class GlovoClient {
         stoppedReason = "empty_page";
         break;
       }
+      let knownOrderSeen = false;
       for (const order of pageOrders) {
         const compact = compactOrder(order);
         const id = compact?.order_id;
+        if (id && stopOrderIds?.has(String(id))) knownOrderSeen = true;
         if (!id || seenOrders.has(String(id))) continue;
         seenOrders.add(String(id));
         orders.push(compact);
       }
       const nextOffset = page?.pagination?.next?.offset ?? null;
       pages.push({ cursor, count: pageOrders.length, next_offset: nextOffset });
+      if (knownOrderSeen) {
+        stoppedReason = "known_order";
+        break;
+      }
       if (!nextOffset) {
         stoppedReason = "no_next_cursor";
         break;
@@ -630,6 +648,8 @@ export class GlovoClient {
 export function compactStore(entry) {
   if (!entry) return null;
   const id = entry.id ?? entry.storeId;
+  const categoryId = entry.categoryId ?? entry.category?.id;
+  const storeClass = storeClassFromCategoryId(categoryId);
   return {
     id: String(id),
     store_id: String(id),
@@ -637,7 +657,8 @@ export function compactStore(entry) {
     name: entry.title ?? entry.name,
     slug: entry.slug,
     category: entry.tag ?? entry.category,
-    category_id: entry.categoryId,
+    category_id: categoryId,
+    ...(storeClass ? { store_class: storeClass } : {}),
     open: entry.open ?? entry.availability?.status === "OPEN",
     eta: entry.eta,
     distance: entry.distance,
@@ -649,6 +670,14 @@ export function compactStore(entry) {
     logo: imageUrl(entry.logo?.lightImage ?? entry.logoImageId),
     url: entry.slug ? `https://glovoapp.com/en/es/barcelona/stores/${entry.slug}` : undefined,
   };
+}
+
+export function storeClassFromCategoryId(categoryId) {
+  const id = Number(categoryId);
+  if (id === 1) return "restaurant";
+  if (id === 4) return "grocery";
+  if (id === 3) return "retail";
+  return null;
 }
 
 function asArray(value) {
@@ -850,11 +879,13 @@ export function compactSavedLocations(data, { currentLocation = {}, matchText } 
 
 export function compactStoreWall(data) {
   const stores = data?.data?.stores ?? data?.stores ?? {};
+  const category = data?.data?.category ?? data?.category;
+  const categoryId = category?.id ?? category?.categoryId;
   return {
     pagination: stores.pagination,
     count: stores.entries?.length ?? 0,
-    stores: (stores.entries || []).map(compactStore),
-    category: data?.data?.category,
+    stores: (stores.entries || []).map((entry) => compactStore(categoryId == null ? entry : { ...entry, categoryId: entry.categoryId ?? categoryId })),
+    category,
     widgets: data?.data?.widgets?.map((w) => ({ id: w.id, title: w.title, template_id: w.templateId })),
   };
 }
@@ -894,6 +925,7 @@ export function compactItem(p, extra = {}) {
     restricted: p.restricted,
     available: availability(p),
     quantity_limit: p.quantityLimit,
+    ...(p.categoryId != null ? { category_id: p.categoryId } : {}),
     ...extra,
   };
 }
@@ -918,7 +950,7 @@ function contentKind(value) {
   return String(value || "").toLowerCase().replace(/[^a-z]/g, "");
 }
 
-export function compactStoreContent(data, { kind = "all", limit = 40 } = {}) {
+export function compactStoreContent(data, { kind = "all", limit = 40, storeId, storeAddressId } = {}) {
   const wanted = contentKind(kind);
   let remaining = Math.max(1, Math.min(Number(limit) || 40, 100));
   const sections = [];
@@ -933,6 +965,8 @@ export function compactStoreContent(data, { kind = "all", limit = 40 } = {}) {
     const products = productElements.slice(0, remaining).map((element) => {
       const event = productEventData(element);
       return compactItem(element.data, {
+        ...(storeId != null ? { store_id: String(storeId) } : {}),
+        ...(storeAddressId != null ? { store_address_id: storeAddressId } : {}),
         description: element.data.description,
         collection_type: firstValue(event.collectionType, collectionType),
         ordered_before: String(event.isOrderedBefore).toLowerCase() === "true",
@@ -950,7 +984,13 @@ export function compactStoreContent(data, { kind = "all", limit = 40 } = {}) {
     if (!remaining) break;
   }
   const products = sections.flatMap((section) => section.products);
-  return { kind, count: products.length, sections, products };
+  return {
+    kind,
+    count: products.length,
+    sections,
+    products,
+    ...(products.length ? {} : { unsupported_reason: "This content node exposes no product tiles. Use store item search for the live catalog." }),
+  };
 }
 
 export function compactStoreOrderOptions({ fees, restrictions, info, similar }) {
@@ -986,11 +1026,13 @@ export function compactStoreOrderOptions({ fees, restrictions, info, similar }) 
 export function compactProductView(data) {
   const meta = data?.data?.metadata?.product ?? data?.metadata?.product ?? data?.product ?? data;
   const addEnabled = productAddEnabled(data);
+  const optionGroups = optionGroupsFromProduct(data);
   return {
     ...compactItem({
     id: meta?.id,
     externalId: meta?.externalId,
     storeProductId: meta?.storeProductId,
+    categoryId: meta?.categoryId,
     name: meta?.name,
     priceInfo: meta?.priceInfo,
     imageUrl: meta?.imageUrl,
@@ -1000,7 +1042,9 @@ export function compactProductView(data) {
     }),
     available: addEnabled,
     add_enabled: addEnabled,
-    option_groups: optionGroupsFromProduct(data),
+    is_variant: meta?.isVariant ?? null,
+    variant_selection: optionGroups.length ? "customizations" : meta?.isVariant === true ? "separate_catalog_product" : "not_exposed",
+    option_groups: optionGroups,
     required_sections: data?.data?.actions?.primary?.events?.flatMap((e) => e?.data?.requiredSections || []) || [],
   };
 }

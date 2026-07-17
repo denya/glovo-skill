@@ -10,6 +10,7 @@ import {
   normalizeVenue,
   rankVenueHistory,
 } from "./venue-model.mjs";
+import { getCachedOrderCards } from "./history-cache.mjs";
 
 export { normalizeVenue, rankVenueHistory } from "./venue-model.mjs";
 
@@ -456,6 +457,7 @@ export async function getSuggestions(client, input, {
     maxChoices: Math.max(3, Math.min(5, Number(input.maxChoices ?? 5))),
     includeGoogle: Boolean(input.includeGoogle),
     includeGoogleReviews: Boolean(input.includeGoogleReviews),
+    historyRefresh: input.historyRefresh === "full" ? "full" : "incremental",
   };
   if (!intent.query) throw new Error("Suggestion query is required.");
   const auth = client.authStatus();
@@ -463,7 +465,7 @@ export async function getSuggestions(client, input, {
   if (!auth.has_location) throw new Error("Select or confirm a Glovo delivery location before requesting suggestions.");
 
   const [discovery, liveRaw] = await Promise.all([
-    client.getAllOrderCards({ limit: 15, pageDelayMs: 750, maxRetries: 4 }),
+    getCachedOrderCards(client, { refresh: intent.historyRefresh, pageDelayMs: 750, maxRetries: 4 }),
     withRetry(() => client.searchStores(intent.query), { maxRetries: 2, label: "suggestion-global-search" }),
   ]);
   const history = rankVenueHistory(discovery.orders);
@@ -546,6 +548,7 @@ export async function getSuggestions(client, input, {
       novelty_tolerance: intent.noveltyTolerance,
       max_choices: intent.maxChoices,
       google_reviews_requested: intent.includeGoogleReviews,
+      history_refresh: intent.historyRefresh,
     },
     model: {
       name: "venue-multi-scale-recency-5-20-80",
@@ -558,7 +561,10 @@ export async function getSuggestions(client, input, {
     coverage: {
       order_cards_discovered: discovery.orders.length,
       order_cursor_pages: discovery.pages.length,
+      order_cursor_pages_fetched_this_call: discovery.pages.length,
+      order_cursor_pages_at_last_full_refresh: discovery.cache?.full_cursor_pages_at_last_full_refresh ?? discovery.pages.length,
       order_cursor_stop: discovery.stopped_reason,
+      history_cache: discovery.cache,
       venue_model_orders: history.cards,
       live_store_candidates: candidates.length,
       resolved_live_products: choices.length,

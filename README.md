@@ -17,13 +17,13 @@ Optional Google Maps quality evidence is configured after installation through `
 
 ## Install in Claude Desktop
 
-**[Download Glovo v0.2.0 for Claude Desktop (.mcpb)](https://github.com/denya/glovo-skill/releases/download/v0.2.0/glovo-skill-0.2.0.mcpb)**
+**[Download Glovo v0.2.1 for Claude Desktop (.mcpb)](https://github.com/denya/glovo-skill/releases/download/v0.2.1/glovo-skill-0.2.1.mcpb)**
 
-[Release notes and checksum](https://github.com/denya/glovo-skill/releases/tag/v0.2.0)
+[Release notes and checksum](https://github.com/denya/glovo-skill/releases/tag/v0.2.1)
 
-SHA256: `a519c63bb13b059f85c246d54aac01a9685e00b616308d8484090c83b84ee14f`
+SHA256: `1fa8c7b5b01fb5ff53ae5dcdfa21547941415378f17bb7c17d3362b8114102c3`
 
-1. Download `glovo-skill-0.2.0.mcpb`.
+1. Download `glovo-skill-0.2.1.mcpb`.
 2. Open Claude Desktop on macOS.
 3. Go to **Settings -> Extensions -> Advanced settings -> Install Extension...**.
 4. Select the MCPB and approve installation.
@@ -67,11 +67,14 @@ Restart Codex, then ask it to use Glovo. Optional Google enrichment can be added
 - "Show why each choice was selected, the history coverage, current price, availability, and required options."
 - "Show my saved delivery locations and whether the current Glovo location matches one."
 - "Find open supermarkets near the selected location and compare delivery minimums."
+- "Browse a pharmacy or retail shop by category and show exact current sizes or packs without inventing variants."
 - "Read my full order history and separate card-level venue statistics from detail-backed product statistics."
 - "Resolve my previous order against the current catalog without changing the basket."
 - "After I approve the exact product and modifiers, prepare the basket for my review."
 
 `glovo_get_suggestions` accepts repeat, explore, or balanced intent and returns 3-5 labeled live choices. It never mutates the basket. The agent must use the separate product/options tools and obtain explicit approval before any basket change.
+
+Suggestions keep an account-scoped private order-card cache beside the session file. Every request still refreshes Glovo from `offset=0` and follows exact cursors until it overlaps a known order; live stores, prices, availability, options, and all Google evidence remain uncached. Responses report cache mode, pages fetched, prior full-walk coverage, refresh time, and `stale:false`. Set `history_refresh=full` to force cursor exhaustion.
 
 ## Recommendation Evidence
 
@@ -124,7 +127,8 @@ npm run test:mcp:auth
 | `glovo_get_location` / `glovo_set_location` | Read or set local browsing-location headers | No |
 | `glovo_search_locations` / `glovo_select_location` | Find and select a serviceable public location | No |
 | `glovo_get_saved_locations` | Read saved delivery locations and current-match arguments | Yes |
-| `glovo_browse_stores` / `glovo_get_store` / `glovo_get_store_menu` | Browse current stores and menus | No |
+| `glovo_browse_stores` / `glovo_get_store` / `glovo_get_store_menu` | Browse current restaurant, grocery, and retail stores and menus | No |
+| `glovo_browse_store_catalog` | Follow an exact same-store menu content URI, with a truthful search fallback | Yes |
 | `glovo_get_suggestions` | Produce personalized 3-5 current choices with optional Google evidence | Yes |
 | `glovo_get_store_recommendations` / `glovo_get_store_order_options` | Read Easy Reorder, Top Sellers, fees, restrictions, and alternatives | Yes / No |
 | `glovo_search_store_items` / `glovo_get_product` | Search current products and inspect required/optional modifiers | No |
@@ -138,7 +142,8 @@ npm run test:mcp:auth
 
 - All suggestion, search, location, product, history, stats, repeat-plan, and basket behavior is direct API traffic. It does not drive, tap, or scrape Chrome.
 - History pagination starts at `offset=0` and follows `pagination.next.offset` exactly. It never numerically increments a cursor.
-- Suggestions discover the complete order-card history before ranking. Product details remain a bounded, separately reported coverage layer.
+- Suggestions rank against a complete account-scoped order-card cache, refresh the newest cursor page on every call, and expose explicit freshness metadata. A forced full walk remains available. Product details remain a bounded, separately reported coverage layer.
+- Restaurant, grocery, and retail surfaces share Glovo's API family. Catalog nodes are followed only through validated same-store content URIs; nodes without product tiles return an item-search fallback. Retail size or pack variants are never synthesized when Glovo exposes them only as separate named products.
 - A previous purchase proves familiarity, not satisfaction. `known_liked_only` is used only when the user explicitly supplies that preference.
 - Exploration is separate from the backtested repeat model. Novel candidates use current Glovo availability and count-aware Glovo quality; optional Google data remains clearly labeled external evidence.
 - Every chosen product is re-fetched and must have `add_enabled=true`. Three product identifiers, the store category, and all required/optional modifier identities are preserved for later basket review.

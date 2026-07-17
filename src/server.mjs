@@ -54,7 +54,7 @@ const INSTRUCTIONS = `Use Glovo read-only tools before mutating the real basket.
 Do not checkout or pay. Basket tools only prepare the user's real Glovo basket for later human review.
 If auth is missing or expired, call glovo_login and let the user sign in in the browser.`;
 
-const server = new McpServer({ name: "glovo", version: "0.2.0" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "glovo", version: "0.2.1" }, { instructions: INSTRUCTIONS });
 
 server.registerTool(
   "glovo_get_shopping_guide",
@@ -172,7 +172,7 @@ server.registerTool(
   "glovo_browse_stores",
   {
     title: "Browse stores",
-    description: "Browse live Glovo stores for the configured location. category_id 4 = groceries, 1 = food/restaurants.",
+    description: "Browse live Glovo stores for the configured location. category_id 1 = restaurants, 4 = groceries, and 3 = pharmacy/beauty retail.",
     inputSchema: {
       category_id: z.number().int().optional().describe("Glovo category id. Default 4 (groceries); use 1 for food."),
       offset: z.number().int().min(0).optional().describe("Pagination offset. Default 0."),
@@ -207,6 +207,7 @@ server.registerTool(
       max_choices: z.number().int().min(3).max(5).optional().describe("Return 3-5 choices. Default 5; fewer may be returned when current products are unavailable."),
       include_google_quality: z.boolean().optional().describe("Request optional Google Places quality evidence for the final shortlist. Requires configured GOOGLE_MAPS_API_KEY."),
       include_google_reviews: z.boolean().optional().describe("Explicitly request Google review text for at most the first three matched finalists. May increase Places billing; preserves author/source attribution."),
+      history_refresh: z.enum(["incremental", "full"]).optional().describe("Incrementally refresh the newest order page by default, or force a complete cursor walk."),
     },
   },
   tool(async (args, c) => json(await getSuggestions(c, {
@@ -220,6 +221,7 @@ server.registerTool(
     maxChoices: args.max_choices,
     includeGoogle: args.include_google_quality,
     includeGoogleReviews: args.include_google_reviews,
+    historyRefresh: args.history_refresh,
   }))),
 );
 
@@ -247,6 +249,24 @@ server.registerTool(
     },
   },
   tool(async ({ store_id, store_address_id, limit }, c) => json(compactMenu(await c.getStoreMenu(store_id, store_address_id), limit ?? 80))),
+);
+
+server.registerTool(
+  "glovo_browse_store_catalog",
+  {
+    title: "Browse store catalog",
+    description: "Open an exact same-store content_uri returned by glovo_get_store_menu. Supports restaurant, grocery, and retail catalogs; returns a truthful search fallback when a node has no product tiles.",
+    inputSchema: {
+      store_id: z.union([z.string(), z.number()]),
+      store_address_id: z.union([z.string(), z.number()]),
+      content_uri: z.string().min(1).describe("Exact content_uri returned by glovo_get_store_menu for this store and address."),
+      limit: z.number().int().min(1).max(100).optional().describe("Maximum products returned. Default 40."),
+    },
+  },
+  tool(async ({ store_id, store_address_id, content_uri, limit }, c) => json(compactStoreContent(
+    await c.getStoreCatalog(store_id, store_address_id, content_uri, { auth: true }),
+    { kind: "all", limit: limit ?? 40, storeId: store_id, storeAddressId: store_address_id },
+  ))),
 );
 
 server.registerTool(
@@ -323,7 +343,11 @@ server.registerTool(
     },
   },
   tool(async ({ store_id, store_address_id, product_id, external_id, category_id, quantity }, c) =>
-    json(compactProductView(await c.getProduct({ storeId: store_id, storeAddressId: store_address_id, productId: product_id, externalId: external_id, categoryId: category_id, quantity: quantity ?? 1 }))),
+    json({
+      store_id: String(store_id),
+      store_address_id,
+      ...compactProductView(await c.getProduct({ storeId: store_id, storeAddressId: store_address_id, productId: product_id, externalId: external_id, categoryId: category_id, quantity: quantity ?? 1 })),
+    }),
   ),
 );
 

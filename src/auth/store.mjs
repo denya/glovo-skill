@@ -26,21 +26,29 @@ export function tokenStatus(session) {
 }
 
 export function loadSession(sessionPath) {
-  secureSessionDir(sessionPath);
-  const mode = statSync(sessionPath).mode & 0o777;
-  if (mode !== 0o600) chmodSync(sessionPath, 0o600);
-  const s = JSON.parse(readFileSync(sessionPath, "utf8"));
+  const s = loadPrivateJson(sessionPath);
   if (!s.accessToken && !s.refreshToken && !s.location) throw new Error("No Glovo token or location in session. Run glovo_login first.");
   if ((s.accessToken || s.refreshToken) && typeof (s.accessToken || s.refreshToken) !== "string") throw new Error("Malformed Glovo session. Run glovo_login again.");
   return s;
 }
 
 export function saveSession(sessionPath, session) {
-  secureSessionDir(sessionPath);
-  const tmp = `${sessionPath}.${process.pid}.${Date.now()}.tmp`;
+  savePrivateJson(sessionPath, { ...session, updatedAt: new Date().toISOString() });
+}
+
+export function loadPrivateJson(filePath) {
+  secureSessionDir(filePath);
+  const mode = statSync(filePath).mode & 0o777;
+  if (mode !== 0o600) chmodSync(filePath, 0o600);
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+export function savePrivateJson(filePath, value) {
+  secureSessionDir(filePath);
+  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   const fd = openSync(tmp, "wx", 0o600);
   try {
-    writeFileSync(fd, JSON.stringify({ ...session, updatedAt: new Date().toISOString() }, null, 2));
+    writeFileSync(fd, JSON.stringify(value, null, 2));
   } catch (error) {
     closeSync(fd);
     rmSync(tmp, { force: true });
@@ -48,8 +56,8 @@ export function saveSession(sessionPath, session) {
   }
   closeSync(fd);
   chmodSync(tmp, 0o600);
-  renameSync(tmp, sessionPath);
-  chmodSync(sessionPath, 0o600);
+  renameSync(tmp, filePath);
+  chmodSync(filePath, 0o600);
 }
 
 function secureSessionDir(sessionPath) {

@@ -1,6 +1,6 @@
 {
   "name": "glovo-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Glovo MCP server for personalized live suggestions, products, order history, and basket preparation. No checkout.",
   "type": "module",
   "main": "dist/server.mjs",
@@ -12,7 +12,7 @@
     "live:e2e": "node scripts/live-e2e.mjs",
     "live:e2e:preflight": "node scripts/live-e2e.mjs --preflight",
     "live:e2e:mutate": "node scripts/live-e2e.mjs --mutate",
-    "test": "node tests/session-store.test.mjs && node tests/refresh-rotation.test.mjs && node tests/order-contract.test.mjs && node tests/reorder-preview.test.mjs && node tests/error-redaction.test.mjs && node tests/browser-boundary.test.mjs && node tests/location-contract.test.mjs && node tests/basket-payload.test.mjs && node tests/basket-remove.test.mjs && node tests/basket-restore.test.mjs && node tests/venue-model.test.mjs && node tests/suggestions.test.mjs",
+    "test": "node tests/session-store.test.mjs && node tests/refresh-rotation.test.mjs && node tests/order-contract.test.mjs && node tests/reorder-preview.test.mjs && node tests/error-redaction.test.mjs && node tests/browser-boundary.test.mjs && node tests/location-contract.test.mjs && node tests/store-classes.test.mjs && node tests/history-cache.test.mjs && node tests/basket-payload.test.mjs && node tests/basket-remove.test.mjs && node tests/basket-restore.test.mjs && node tests/venue-model.test.mjs && node tests/suggestions.test.mjs",
     "eval:venues": "node scripts/evaluate-venue-model.mjs",
     "scan:secrets": "node scripts/secret-scan.mjs",
     "test:mcp": "npm run build && node scripts/test-mcp.mjs",

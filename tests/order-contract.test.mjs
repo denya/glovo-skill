@@ -62,6 +62,24 @@ empty.getOrders = async ({ offset }) => {
 };
 assert.equal((await empty.getAllOrderCards({ pageDelayMs: 0 })).stopped_reason, "empty_page");
 
+const incremental = new GlovoClient("/tmp/unused", { session: {} });
+let incrementalCalls = 0;
+incremental.getOrders = async ({ offset }) => {
+  incrementalCalls += 1;
+  assert.equal(offset, 0);
+  return {
+    pagination: { next: { offset: "opaque-next" } },
+    orders: [
+      { orderId: "new", content: { title: "New" } },
+      { orderId: "known", content: { title: "Known" } },
+    ],
+  };
+};
+const incrementalDiscovery = await incremental.getAllOrderCards({ pageDelayMs: 0, stopOrderIds: new Set(["known"]) });
+assert.equal(incrementalCalls, 1);
+assert.equal(incrementalDiscovery.stopped_reason, "known_order");
+assert.deepEqual(incrementalDiscovery.pages.map((page) => page.next_offset), ["opaque-next"]);
+
 const storeContent = {
   data: {
     body: [

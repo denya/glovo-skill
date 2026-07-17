@@ -71,6 +71,7 @@ function summarize(name, parsed) {
   if (name === "glovo_select_location") return { ok: true, selected: Boolean(parsed.selected), deliverable: Boolean(parsed.deliverable), has_city: Boolean(parsed.city_code), has_country: Boolean(parsed.country_code) };
   if (name === "glovo_browse_stores") return { ok: true, count: parsed.count, has_pagination: Boolean(parsed.pagination), category: parsed.category?.name || parsed.category?.title };
   if (name === "glovo_get_store_menu") return { ok: true, count: parsed.count, type: parsed.type };
+  if (name === "glovo_browse_store_catalog") return { ok: true, count: parsed.count, sections: parsed.sections?.length || 0, has_search_fallback: Boolean(parsed.unsupported_reason), current_ids_complete: (parsed.products || []).every((product) => Boolean(product.product_id && product.external_id && product.store_product_id)) };
   if (name === "glovo_get_store_recommendations") return { ok: true, count: parsed.count, sections: parsed.sections?.length || 0, current_ids_complete: (parsed.products || []).every((product) => Boolean(product.product_id && product.external_id && product.store_product_id)), exposes_tokens: /token/i.test(JSON.stringify(parsed)) };
   if (name === "glovo_get_store_order_options") return { ok: true, fee_ranges: parsed.minimum_basket_ranges?.length || 0, restrictions: parsed.restrictions?.length || 0, store_information: parsed.store_information?.length || 0, similar_stores: parsed.similar_stores?.length || 0, checkout_free: /does not create a basket/i.test(parsed.boundary || "") };
   if (name === "glovo_search_store_items") return { ok: true, count: parsed.count, total: parsed.total };
@@ -80,6 +81,10 @@ function summarize(name, parsed) {
     order_cards: parsed.coverage?.order_cards_discovered,
     cursor_pages: parsed.coverage?.order_cursor_pages,
     cursor_stop: parsed.coverage?.order_cursor_stop,
+    cache_status: parsed.coverage?.history_cache?.status,
+    cache_mode: parsed.coverage?.history_cache?.mode,
+    pages_fetched_this_call: parsed.coverage?.order_cursor_pages_fetched_this_call,
+    stale: parsed.coverage?.history_cache?.stale,
     model: parsed.model?.name,
     holdout_orders: parsed.model?.holdout?.final_test_orders,
     products_revalidated: (parsed.choices || []).every((choice) => choice.product?.add_enabled === true),
@@ -145,6 +150,20 @@ const search = await call("glovo_search_store_items", { store_id: first.store_id
 if (search.result.isError) console.log(JSON.stringify({ event: "reachability", ok: false, stage: "store_search" }));
 
 if (auth) {
+  for (const categoryId of [1, 4, 3]) {
+    const classBrowse = await call("glovo_browse_stores", { category_id: categoryId, limit: 5 });
+    const classStores = classBrowse.result.isError ? [] : JSON.parse(classBrowse.text || "{}").stores || [];
+    const classStore = classStores.find((store) => store.open !== false && store.store_id && store.store_address_id);
+    if (!classStore) continue;
+    const classMenu = await call("glovo_get_store_menu", { store_id: classStore.store_id, store_address_id: classStore.store_address_id, limit: 20 });
+    const contentUri = classMenu.result.isError ? null : JSON.parse(classMenu.text || "{}").sections?.find((section) => section.content_uri)?.content_uri;
+    if (contentUri) await call("glovo_browse_store_catalog", {
+      store_id: classStore.store_id,
+      store_address_id: classStore.store_address_id,
+      content_uri: contentUri,
+      limit: 5,
+    });
+  }
   await call("glovo_get_saved_locations", {});
   const history = await call("glovo_get_purchase_history", { limit: 3 });
   const historyParsed = history.result.isError ? null : JSON.parse(history.text || "{}");

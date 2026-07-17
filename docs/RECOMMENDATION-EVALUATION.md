@@ -2,7 +2,7 @@
 
 ## Decision
 
-Glovo v0.2.0 uses the `multiscale_5_20_80` venue model for personalized repeat ranking. It sums purchase recency over 5, 20, and 80 order-event half-lives with weights `0.5`, `0.3`, and `0.2`.
+Since Glovo v0.2.0, the `multiscale_5_20_80` venue model is used for personalized repeat ranking. It sums purchase recency over 5, 20, and 80 order-event half-lives with weights `0.5`, `0.3`, and `0.2`.
 
 The model was selected on validation only, using the simplest candidate within one standard error of the best validation NDCG@5. The final test window remained untouched until selection was complete.
 

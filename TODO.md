@@ -1,5 +1,17 @@
 # Glovo Skill Release TODO
 
+## v0.2.1 Store Classes and Fast Suggestions
+
+- [x] Map sanitized live restaurant, grocery, and non-food retail wall/search/catalog/product/fee/basket contracts at the current saved location.
+- [x] Normalize only proven store-class gaps and return explicit unsupported-field reasons instead of guessed identifiers.
+- [x] Preserve exact product, external, store-product, store-category, and option/variant identifiers through basket preparation contracts.
+- [x] Add a private normalized order-card cache with exact-cursor incremental refresh, freshness metadata, corruption fallback, and no Google content.
+- [x] Beat the 126-second baseline: cold full refresh took 108.87s; consecutive warm authenticated repeats took 5.92s and 5.16s with 946-card coverage and unchanged basket state.
+- [x] Replace the stale local Codex v0.1.0 skill/extension without touching `~/.glovo/session.json`; register the current bundled MCP runtime.
+- [x] Prove a fresh Codex configuration loads the current skill and full 27-tool surface with no browser and no v0.1.0 drift.
+- [x] Run focused contracts, full verification, sanitized live reads, dependency/secret/privacy/no-browser gates, and exact session/basket checks.
+- [ ] Bump aligned release metadata, commit, push, tag, publish MCPB/checksum, and install-test public Codex and Claude artifacts.
+
 ## v0.2.0 Suggestions
 
 - [x] Add one read-only `glovo_get_suggestions` tool for repeat, explore, and balanced intents.

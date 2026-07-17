@@ -45,7 +45,16 @@ await client.connect(transport);
 try {
   const { tools } = await client.listTools();
   const toolNames = tools.map((tool) => tool.name).sort();
-  if (!toolNames.includes("glovo_login")) throw new Error("Packaged runtime did not register glovo_login.");
+  const expectedTools = [
+    "glovo_add_to_basket", "glovo_analyze_order_history", "glovo_auth_status", "glovo_browse_store_catalog",
+    "glovo_browse_stores", "glovo_get_basket", "glovo_get_location", "glovo_get_order_items",
+    "glovo_get_order_stats", "glovo_get_product", "glovo_get_purchase_history", "glovo_get_saved_locations",
+    "glovo_get_shopping_guide", "glovo_get_store", "glovo_get_store_menu", "glovo_get_store_order_options",
+    "glovo_get_store_recommendations", "glovo_get_suggestions", "glovo_login", "glovo_plan_reorder",
+    "glovo_preview_reorder", "glovo_remove_from_basket", "glovo_search_locations", "glovo_search_store_items",
+    "glovo_select_location", "glovo_set_location", "glovo_set_quantity",
+  ].sort();
+  if (JSON.stringify(toolNames) !== JSON.stringify(expectedTools)) throw new Error("Packaged runtime tool surface does not match v0.2.1.");
 
   const result = await client.callTool({ name: "glovo_auth_status", arguments: {} });
   const text = result.content?.map((c) => c.text).join("\n") ?? "";
@@ -57,6 +66,8 @@ try {
     ok: true,
     packaged_runtime: true,
     login_tool_registered: true,
+    tool_count: toolNames.length,
+    store_catalog_tool_registered: toolNames.includes("glovo_browse_store_catalog"),
     no_browser_launched: true,
     no_chrome_navigation: true,
     node_path_empty: true,

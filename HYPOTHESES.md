@@ -1,5 +1,17 @@
 # Glovo API Hypotheses
 
+## v0.2.1 Store Classes and Fast Suggestions
+
+- Resolved: restaurant, grocery, and non-food retail walls share store cards, search, product-view, fee, and basket envelopes. They differ in wall category, menu depth, main-content collections, and whether category content exposes product tiles.
+- Resolved: current product detail remains the authoritative source for the three product ids and option selections across every store class; store detail remains authoritative for nonzero `storeCategoryId`. Live restaurant, grocery, and retail products all exposed complete ids, though grocery/retail ids were not always pairwise distinct, so completeness rather than distinctness is the invariant.
+- Resolved: grocery and retail menu actions return complete same-store content URIs. The existing `contentSlug` path incorrectly nested those URIs as query values; a bounded same-store URI route is the only new catalog path needed.
+- Resolved: sampled retail products exposed exact pack/size in the product name, `isVariant=false`, and no selectable option groups. Report variant selection as not exposed and require an exact live product; do not invent shade/size identifiers.
+- Resolved: a private normalized order-card cache preserves complete venue-model evidence while every incremental refresh starts at `offset=0`, follows exact `pagination.next.offset`, and stops only after a known order overlap. Cold full refresh took 108.87s; the first warm authenticated repeat took 5.92s with the same 946 cards and live product revalidation.
+- Revised: history is account-scoped, not location-scoped. Always refresh the newest order page by exact cursor and keep live store/product availability location-specific and uncached; no freshness window is needed.
+- Negative decision: never use a TTL-only cache hit or stale-on-network-error fallback. A warm call must contact Glovo and fail truthfully if freshness cannot be established.
+- Negative decision: do not create a generic commerce/store adapter hierarchy. Shared Glovo API envelopes stay shared; only proven response-shape branches earn normalization code.
+- Negative decision: do not promote a product model. The 15-detail corpus remains underpowered and separate from full card-level venue evidence.
+
 ## v0.2.0 Suggestions
 
 - Resolved: full cursor-correct order cards support personalized venue ranking, but not learned item ranking. Product choices come from current live Glovo catalogs until detail coverage grows.
