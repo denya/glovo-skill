@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "glovo",
   "display_name": "Glovo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Browse Glovo stores, inspect products and options, read order history, and prepare baskets without checkout.",
   "author": {
     "name": "Denya"

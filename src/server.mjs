@@ -50,7 +50,7 @@ const INSTRUCTIONS = `Use Glovo read-only tools before mutating the real basket.
 Do not checkout or pay. Basket tools only prepare the user's real Glovo basket for later human review.
 If auth is missing or expired, call glovo_login and let the user sign in in the browser.`;
 
-const server = new McpServer({ name: "glovo", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "glovo", version: "0.1.1" }, { instructions: INSTRUCTIONS });
 
 server.registerTool(
   "glovo_get_shopping_guide",
