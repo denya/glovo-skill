@@ -1,6 +1,5 @@
 node_modules/
 *.mcpb
-!glovo-skill.mcpb
 .DS_Store
 .glovo/
 *.log
