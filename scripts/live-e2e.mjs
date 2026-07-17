@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import { GlovoClient, compactBasket, compactProductView, compactSearch, validateSelectedOptions, withRetry } from "../src/glovo/api.mjs";
+import { GlovoClient, compactBasket, compactProductView, compactSearch, storeCategoryIdFromStore, validateSelectedOptions, withRetry } from "../src/glovo/api.mjs";
 import { assertMutationCompatible, createBasketSnapshot, persistPrivateSnapshot, withBasketRestore } from "./basket-safety.mjs";
 
 const sessionPath = process.env.GLOVO_SESSION_PATH || path.join(os.homedir(), ".glovo", "session.json");
@@ -15,7 +15,7 @@ async function findProduct(query) {
   for (const store of stores) {
     const search = await withRetry(() => client.searchStoreItems(store.id ?? store.storeId, store.metadata.storeAddressId, query), { maxRetries: 2, label: "live-e2e-search" });
     const products = compactSearch(search, { storeId: String(store.id ?? store.storeId), storeAddressId: store.metadata.storeAddressId, limit: 50 }).results;
-    const product = products.find((candidate) => candidate.available !== false && candidate.external_id);
+    const product = products.find((candidate) => candidate.available !== false && candidate.external_id && candidate.store_product_id);
     if (product) return { store, product };
   }
   throw new Error(`No product found for ${query}`);
@@ -24,17 +24,24 @@ async function findProduct(query) {
 const pizza = await findProduct("pizza");
 const storeId = String(pizza.store.id ?? pizza.store.storeId);
 const storeAddressId = pizza.store.metadata.storeAddressId;
+const storeDetail = await withRetry(() => client.getStore(storeId), { maxRetries: 2, label: "live-e2e-store-detail" });
+const storeCategoryId = storeCategoryIdFromStore(storeDetail);
 const productId = pizza.product.id ?? pizza.product.product_id ?? pizza.product.productId;
 const externalId = pizza.product.external_id ?? pizza.product.externalId ?? pizza.product.productExternalId;
+const storeProductId = pizza.product.store_product_id ?? pizza.product.storeProductId;
 const productView = await withRetry(() => client.getProduct({ storeId, storeAddressId, productId, externalId }), { maxRetries: 2, label: "live-e2e-product" });
 const repeatedProductView = await withRetry(() => client.getProduct({ storeId, storeAddressId, productId, externalId }), { maxRetries: 2, label: "live-e2e-product-repeat" });
 const compactProduct = compactProductView(productView);
+const productViewStoreProductId = compactProduct.store_product_id;
 const requiredOptions = selectRequiredOptions(compactProduct);
 const candidate = {
   open_store: true,
-  current_available: compactProduct.available !== false,
+  current_available: compactProduct.add_enabled === true,
   has_product_id: Boolean(productId),
   has_external_id: Boolean(externalId),
+  has_store_product_id: Boolean(storeProductId && productViewStoreProductId),
+  has_store_category_id: Boolean(storeCategoryId && Number(storeCategoryId) !== 0),
+  fresh_ids_match_search: String(compactProduct.product_id) === String(productId) && String(compactProduct.external_id) === String(externalId) && String(productViewStoreProductId) === String(storeProductId),
   has_required_option_choices: requiredOptions.length > 0,
   repeated_product_detail_ok: Boolean(compactProductView(repeatedProductView).product_id),
 };
@@ -62,6 +69,30 @@ function originalContainsProduct(snapshot, storeId, productId, externalId) {
     const ids = line.ids || {};
     return String(ids.id) === String(productId) || (externalId && String(ids.externalId) === String(externalId));
   });
+}
+
+function findTestLine(compact) {
+  return (compact?.lines || []).find((line) =>
+    String(line.product_id) === String(productId) ||
+    String(line.external_id) === String(externalId) ||
+    String(line.store_product_id) === String(storeProductId)
+  );
+}
+
+function assertLineAbsentFromGlobal(raw) {
+  const baskets = Array.isArray(raw) ? raw : raw?.baskets || raw?.data?.baskets || [];
+  const selected = baskets.find((basket) => String(basket.storeId) === String(storeId));
+  const compact = compactBasket(selected);
+  if (findTestLine(compact)) throw new Error("Removed test product is still visible in global basket state.");
+  return true;
+}
+
+async function waitForStage(stage, predicate) {
+  return withRetry(async () => {
+    const result = await predicate();
+    if (!result) throw new Error(`Stage ${stage} state not visible yet.`);
+    return result;
+  }, { maxRetries: 2, label: `live-e2e-stage-${stage}` });
 }
 
 if (preflightOnly) {
@@ -94,15 +125,27 @@ console.log(JSON.stringify({ event: "snapshot", baskets: originalBaskets.length,
 await withBasketRestore(client, snapshot, storeId, async () => {
   const freshProductView = await withRetry(() => client.getProduct({ storeId, storeAddressId, productId, externalId }), { maxRetries: 2, label: "live-e2e-product-before-add" });
   const freshCompact = compactProductView(freshProductView);
-  if (freshCompact.available === false) throw new Error("Selected product became unavailable before add.");
+  if (freshCompact.add_enabled !== true) throw new Error("Selected product add button is not enabled before add.");
+  if (String(freshCompact.store_product_id) !== String(storeProductId)) throw new Error("Fresh product identifiers no longer match search result.");
   validateSelectedOptions(freshProductView, requiredOptions);
-  const added = await client.addToBasket({ storeId, storeAddressId, productId, externalId, quantity: 1, selectedOptions: requiredOptions, productView: freshProductView });
-  const compactAdded = compactBasket(added);
-  const basketLine = compactAdded.lines.find((line) => String(line.product_id) === String(productId) || String(line.external_id) === String(externalId));
-  if (!basketLine?.basket_product_id) throw new Error("Added product was not visible in basket.");
-  if (!basketLine.has_selected_options) throw new Error("Added modifier product did not show selected options in basket representation.");
+  await client.addToBasket({ storeId, storeAddressId, storeCategoryId, productId, externalId, storeProductId: freshCompact.store_product_id, quantity: 1, selectedOptions: requiredOptions, productView: freshProductView });
+  const basketLine = await waitForStage("add", async () => {
+    const line = findTestLine(compactBasket(await client.getBasketByStore(storeId)));
+    if (!line?.basket_product_id || !line.has_selected_options) return null;
+    return line;
+  });
+  console.log(JSON.stringify({ event: "stage_add", line_present: true, selected_customizations: true }));
   await client.setQuantity({ storeId, basketProductId: basketLine.basket_product_id, quantity: 2 });
-  await client.removeFromBasket({ storeId, basketProductId: basketLine.basket_product_id });
+  const setLine = await waitForStage("set", async () => {
+    const line = findTestLine(compactBasket(await client.getBasketByStore(storeId)));
+    if (!line?.basket_product_id || Number(line?.quantity) !== 2) return null;
+    return line;
+  });
+  console.log(JSON.stringify({ event: "stage_set", quantity_two: true, id_rotated: String(setLine.basket_product_id) !== String(basketLine.basket_product_id) }));
+  await client.removeFromBasket({ storeId, basketProductId: setLine.basket_product_id });
+  await waitForStage("remove", async () => !findTestLine(compactBasket(await client.getBasketByStore(storeId))));
+  await waitForStage("remove-global", async () => assertLineAbsentFromGlobal(await client.getBaskets()));
+  console.log(JSON.stringify({ event: "stage_remove", line_absent_store: true, line_absent_global: true }));
   console.log(JSON.stringify({ event: "mutation_e2e", pizza_add_set_remove: true, required_options_validated: true, basket_options_represented: true }));
 }, { recoveryPath }).then(({ restore }) => {
   console.log(JSON.stringify({ event: "restore_ok", fingerprint: restore.fingerprint }));

@@ -55,6 +55,8 @@ function summarize(name, parsed) {
       has_device_context: Boolean(parsed.deviceUrn || parsed.perseusClientId || parsed.perseusSessionId),
     };
   }
+  if (name === "glovo_search_locations") return { ok: true, count: parsed.count, has_place_ids: (parsed.results || []).every((entry) => Boolean(entry.place_id)), exposes_coordinates: JSON.stringify(parsed).includes("latitude") || JSON.stringify(parsed).includes("longitude") };
+  if (name === "glovo_select_location") return { ok: true, selected: Boolean(parsed.selected), deliverable: Boolean(parsed.deliverable), has_city: Boolean(parsed.city_code), has_country: Boolean(parsed.country_code) };
   if (name === "glovo_browse_stores") return { ok: true, count: parsed.count, has_pagination: Boolean(parsed.pagination), category: parsed.category?.name || parsed.category?.title };
   if (name === "glovo_get_store_menu") return { ok: true, count: parsed.count, type: parsed.type };
   if (name === "glovo_search_store_items") return { ok: true, count: parsed.count, total: parsed.total };
@@ -67,6 +69,7 @@ function summarize(name, parsed) {
 
 await call("glovo_auth_status");
 await call("glovo_get_location");
+await call("glovo_search_locations", { query: "carrer mallorca", limit: 3 });
 const browse = await call("glovo_browse_stores", { category_id: 4, limit: 5 });
 if (browse.result.isError) {
   console.log(JSON.stringify({ event: "reachability", ok: false, stage: "browse_stores" }));

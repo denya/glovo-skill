@@ -12,14 +12,15 @@
     "live:e2e": "node scripts/live-e2e.mjs",
     "live:e2e:preflight": "node scripts/live-e2e.mjs --preflight",
     "live:e2e:mutate": "node scripts/live-e2e.mjs --mutate",
-    "test": "node tests/session-store.test.mjs && node tests/refresh-rotation.test.mjs && node tests/order-contract.test.mjs && node tests/reorder-preview.test.mjs && node tests/error-redaction.test.mjs && node tests/browser-boundary.test.mjs && node tests/basket-restore.test.mjs",
+    "test": "node tests/session-store.test.mjs && node tests/refresh-rotation.test.mjs && node tests/order-contract.test.mjs && node tests/reorder-preview.test.mjs && node tests/error-redaction.test.mjs && node tests/browser-boundary.test.mjs && node tests/location-contract.test.mjs && node tests/basket-payload.test.mjs && node tests/basket-remove.test.mjs && node tests/basket-restore.test.mjs",
     "scan:secrets": "node scripts/secret-scan.mjs",
     "test:mcp": "npm run build && node scripts/test-mcp.mjs",
     "test:mcp:auth": "npm run build && node scripts/test-mcp.mjs --auth",
     "validate:plugin": "claude plugin validate . --strict",
     "validate:mcpb": "npx -y @anthropic-ai/mcpb validate manifest.json",
     "pack:mcpb": "npx -y @anthropic-ai/mcpb pack .",
-    "verify": "npm run build && npm test && npm run validate:plugin && npm run validate:mcpb && npm run test:mcp && npm audit --audit-level=high && npm run scan:secrets"
+    "test:bundled-login": "npm run build && node scripts/test-bundled-login.mjs",
+    "verify": "npm run build && npm test && npm run validate:plugin && npm run validate:mcpb && npm run pack:mcpb && npm run test:mcp && npm run test:bundled-login && npm audit --audit-level=high && npm run scan:secrets"
   },
   "keywords": [
     "glovo",

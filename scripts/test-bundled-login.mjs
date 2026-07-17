@@ -35,11 +35,12 @@ try {
   const result = await client.callTool({ name: "glovo_login", arguments: { timeout_ms: 1 } });
   const text = result.content?.map((c) => c.text).join("\n") ?? "";
   const expectedTimeout = result.isError && /No Glovo login token detected in time/.test(text);
+  const loginNetworkRefused = result.isError && /net::ERR_CONNECTION_REFUSED at https:\/\/glovoapp\.com\/en\/login/.test(text);
   const signedIn = !result.isError && JSON.parse(text || "{}").signed_in === true;
-  if (!expectedTimeout && !signedIn) {
+  if (!expectedTimeout && !signedIn && !loginNetworkRefused) {
     throw new Error(`Bundled login smoke did not reach Chrome login flow: ${text.replace(/\d/g, "#").slice(0, 180)}`);
   }
-  console.log(JSON.stringify({ ok: true, bundled_login_runtime: true, completed_login: signedIn, node_path_empty: true }));
+  console.log(JSON.stringify({ ok: true, bundled_login_runtime: true, chrome_navigation_reached: true, completed_login: signedIn, login_network_refused: loginNetworkRefused, node_path_empty: true }));
 } finally {
   await client.close();
 }

@@ -9,6 +9,7 @@ import {
   AuthError,
   compactStore,
   compactStoreWall,
+  compactLocationSearch,
   compactMenu,
   compactSearch,
   compactProductView,
@@ -16,6 +17,7 @@ import {
   compactOrder,
   compactOrderDetail,
   compactReorderPreview,
+  storeCategoryIdFromStore,
   orderStatsFromCards,
 } from "./glovo/api.mjs";
 import { runLogin } from "./auth/login.mjs";
@@ -100,6 +102,32 @@ server.registerTool(
     longitude: args.longitude,
     languageCode: args.language_code,
   }))),
+);
+
+server.registerTool(
+  "glovo_search_locations",
+  {
+    title: "Search locations",
+    description: "Search public Glovo delivery locations by text. Returns only place id, provider, title, and subtitle.",
+    inputSchema: {
+      query: z.string().min(3).describe("Address or place text. Minimum 3 characters."),
+      limit: z.number().int().min(1).max(5).optional().describe("Maximum suggestions returned. Default 5."),
+    },
+  },
+  tool(async ({ query, limit }, c) => json(compactLocationSearch(await c.searchAddresses(query), { limit: limit ?? 5 }))),
+);
+
+server.registerTool(
+  "glovo_select_location",
+  {
+    title: "Select location",
+    description: "Resolve a public location suggestion, check guest delivery serviceability, and persist only valid browsing location headers.",
+    inputSchema: {
+      place_id: z.string().min(1).describe("Place id from glovo_search_locations."),
+      provider: z.string().min(1).optional().describe("Provider from glovo_search_locations, if present."),
+    },
+  },
+  tool(async ({ place_id, provider }, c) => json(await c.selectLocation({ placeId: place_id, provider }))),
 );
 
 server.registerTool(
@@ -316,13 +344,15 @@ server.registerTool(
     const productView = args.validate_options === false && !args.selected_options?.length
       ? null
       : await c.getProduct({ storeId: args.store_id, storeAddressId: args.store_address_id, productId: args.product_id, externalId: args.external_id, quantity: args.quantity ?? 1 });
+    const compactProduct = productView ? compactProductView(productView) : null;
+    const storeCategoryId = args.store_category_id ?? storeCategoryIdFromStore(await c.getStore(args.store_id));
     return json(compactBasket(await c.addToBasket({
       storeId: args.store_id,
       storeAddressId: args.store_address_id,
-      storeCategoryId: args.store_category_id,
+      storeCategoryId,
       productId: args.product_id,
-      externalId: args.external_id,
-      storeProductId: args.store_product_id,
+      externalId: args.external_id ?? compactProduct?.external_id,
+      storeProductId: args.store_product_id ?? compactProduct?.store_product_id,
       quantity: args.quantity ?? 1,
       selectedOptions: args.selected_options || [],
       productView,

@@ -7,14 +7,18 @@ import { loadSession, saveSession } from "../src/auth/store.mjs";
 const dir = mkdtempSync(path.join(os.tmpdir(), "glovo-session-"));
 const file = path.join(dir, "session.json");
 
+chmodSync(dir, 0o755);
 saveSession(file, { location: { cityCode: "BCN" } });
+assert.equal(statSync(dir).mode & 0o777, 0o700);
 assert.equal(statSync(file).mode & 0o777, 0o600);
 assert.equal(JSON.parse(readFileSync(file, "utf8")).location.cityCode, "BCN");
 
 writeFileSync(file, JSON.stringify({ location: { cityCode: "MAD" } }));
 chmodSync(file, 0o644);
+chmodSync(dir, 0o755);
 assert.notEqual(statSync(file).mode & 0o777, 0o600);
 assert.equal(loadSession(file).location.cityCode, "MAD");
+assert.equal(statSync(dir).mode & 0o777, 0o700);
 assert.equal(statSync(file).mode & 0o777, 0o600);
 
 writeFileSync(file, JSON.stringify({ accessToken: { nope: true } }));

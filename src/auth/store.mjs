@@ -26,6 +26,7 @@ export function tokenStatus(session) {
 }
 
 export function loadSession(sessionPath) {
+  secureSessionDir(sessionPath);
   const mode = statSync(sessionPath).mode & 0o777;
   if (mode !== 0o600) chmodSync(sessionPath, 0o600);
   const s = JSON.parse(readFileSync(sessionPath, "utf8"));
@@ -35,7 +36,7 @@ export function loadSession(sessionPath) {
 }
 
 export function saveSession(sessionPath, session) {
-  mkdirSync(dirname(sessionPath), { recursive: true });
+  secureSessionDir(sessionPath);
   const tmp = `${sessionPath}.${process.pid}.${Date.now()}.tmp`;
   const fd = openSync(tmp, "wx", 0o600);
   try {
@@ -49,4 +50,11 @@ export function saveSession(sessionPath, session) {
   chmodSync(tmp, 0o600);
   renameSync(tmp, sessionPath);
   chmodSync(sessionPath, 0o600);
+}
+
+function secureSessionDir(sessionPath) {
+  const dir = dirname(sessionPath);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const mode = statSync(dir).mode & 0o777;
+  if (mode !== 0o700) chmodSync(dir, 0o700);
 }

@@ -107,6 +107,10 @@ function findBasket(raw, storeId) {
   return normalizeBaskets(raw).find((basket) => String(basket.storeId) === String(storeId));
 }
 
+function isNoResourceFound(error) {
+  return /NoResourceFoundException|NO_RESOURCE_FOUND|No resource found|not found/i.test(String(error?.message || error));
+}
+
 export function assertMutationCompatible(snapshot, storeId) {
   const baskets = normalizeBaskets(snapshot.raw);
   const nonEmpty = baskets.some(basketHasProducts);
@@ -120,9 +124,10 @@ export function assertMutationCompatible(snapshot, storeId) {
   }
 }
 
-async function restoreOnce(client, snapshot, storeId) {
+async function restoreOnce(client, snapshot, storeId, { deletedBasketIds }) {
   const originalStore = findBasket(snapshot.raw, storeId);
-  const currentStore = await client.getBasketByStore(storeId);
+  const current = await client.getBaskets();
+  const currentStore = findBasket(current, storeId);
 
   if (basketHasProducts(originalStore)) {
     if (!currentStore?.basketId) throw new Error("Original basket disappeared; cannot restore it safely.");
@@ -130,24 +135,44 @@ async function restoreOnce(client, snapshot, storeId) {
       ...currentStore,
       products: clone(originalStore.products || []),
     });
-  } else if (basketHasProducts(currentStore)) {
-    const ids = (currentStore.products || []).map((line) => line?.ids?.basketProductId).filter(Boolean);
-    if (ids.length) await client.removeProducts(currentStore.basketId, ids);
+  } else if (originalStore) {
+    if (!currentStore?.basketId) throw new Error("Original empty basket disappeared; cannot restore it safely.");
+    await client.updateBasketProducts(currentStore.basketId, {
+      ...currentStore,
+      products: clone(originalStore.products || []),
+    });
+  } else {
+    if (currentStore?.basketId) await deleteSelectedStoreBasket(client, currentStore.basketId, deletedBasketIds);
   }
 
-  const after = await client.getBaskets();
-  const afterCanonical = canonicalBasketState(after);
-  if (JSON.stringify(afterCanonical) !== JSON.stringify(snapshot.canonical)) {
-    throw new Error("Basket canonical state still differs after restore.");
-  }
+  const after = await readCanonicalMatch(client, snapshot);
   return { fingerprint: basketFingerprint(after, snapshot.salt) };
+}
+
+async function deleteSelectedStoreBasket(client, basketId, deletedBasketIds) {
+  const key = String(basketId);
+  if (deletedBasketIds.has(key)) return;
+  try {
+    await client.deleteBasket(basketId);
+    deletedBasketIds.add(key);
+  } catch (error) {
+    if (!isNoResourceFound(error)) throw error;
+    deletedBasketIds.add(key);
+  }
+}
+
+async function readCanonicalMatch(client, snapshot) {
+  const last = await client.getBaskets();
+  if (JSON.stringify(canonicalBasketState(last)) === JSON.stringify(snapshot.canonical)) return last;
+  throw new Error("Basket canonical state still differs after restore.");
 }
 
 export async function restoreBaskets(client, snapshot, storeId, { retries = 3, delayMs = 1000, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
   let lastError;
+  const deletedBasketIds = new Set();
   for (let attempt = 0; attempt < retries; attempt += 1) {
     try {
-      return await restoreOnce(client, snapshot, storeId);
+      return await restoreOnce(client, snapshot, storeId, { deletedBasketIds });
     } catch (error) {
       lastError = error;
       if (attempt + 1 < retries) await sleep(delayMs * 2 ** attempt);

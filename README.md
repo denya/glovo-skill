@@ -15,7 +15,7 @@ Then run `/reload-plugins` in Claude Code and inspect `/mcp` for the `glovo` ser
 
 Ask Claude to call `glovo_login`. A Chrome window opens only for Glovo sign-in/session establishment. Session state is saved under Claude plugin data via `${CLAUDE_PLUGIN_DATA}/session.json`; local development uses `~/.glovo/session.json`.
 
-Session files are written with mode `0600`. Tokens, exact coordinates, order payloads, and basket payloads are not printed by the included smoke scripts.
+Session files are written with mode `0600`. Tokens, exact coordinates, order payloads, and basket payloads are not printed by the included smoke scripts. After login, all store, product, history, stats, reorder, and basket work is API-only through `GlovoClient` HTTP calls using the saved access/refresh token.
 
 ## Claude Desktop MCPB
 
@@ -35,6 +35,7 @@ Install the generated `.mcpb` in Claude Desktop. The package uses the same bundl
 | Tool | Purpose | Auth |
 | --- | --- | --- |
 | `glovo_get_location` / `glovo_set_location` | Read or set local browsing location headers | No |
+| `glovo_search_locations` / `glovo_select_location` | Search public delivery locations and select a serviceable browsing location | No |
 | `glovo_browse_stores` | Browse live Glovo stores | No |
 | `glovo_get_store` / `glovo_get_store_menu` | Inspect store details and menu nodes | No |
 | `glovo_search_store_items` / `glovo_get_product` | Search products and inspect required/optional modifiers | No |
@@ -51,14 +52,10 @@ Order history starts with `offset=0` and follows `pagination.next.offset` exactl
 
 ```bash
 npm install
-npm run build
-npm test
-npm run validate:plugin
-npm run validate:mcpb
-npm run test:mcp
-npm audit --audit-level=high
-npm run scan:secrets
+npm run verify
 ```
+
+`npm run verify` builds the bundled server, runs unit/contract tests, validates the Claude Code plugin and MCPB manifest, packs MCPB, runs the guest MCP smoke, runs the isolated bundled-login smoke, audits dependencies, and scans for secrets.
 
 Authenticated smoke:
 
@@ -74,13 +71,13 @@ GLOVO_E2E_MUTATE=1 npm run live:e2e:mutate
 
 The mutation E2E snapshots the current basket privately, refuses cross-store or unrestorable pre-existing lines, adds a selected pizza product, sets quantity, removes it, and restores the exact original canonical basket state in `finally`.
 
-Current live mutation status: basket restore safety is tested, and failed live add attempts left the basket unchanged, but Glovo returned `PRODUCT_NOT_AVAILABLE` after product-detail preflight. Do not treat add/set/remove E2E as passed until the add payload root cause is fixed and rerun.
+Current live mutation status: passed. Final controlled run used API-only Glovo calls, selected required modifiers, added the item, verified selected customizations, set quantity to 2, removed by official PATCH-zero quantity, verified the line absent in store/global basket reads, and restored the exact original salted basket fingerprint. Post-check showed `0` baskets / `0` lines and no recovery snapshots.
 
 ## Safety Notes
 
 - No checkout, payment, or order-placement API is included.
 - Basket writes are real and should only be run after explicit confirmation.
-- Browser automation is used only for login/session establishment. Store search, product lookup, history, stats, reorder preview, and basket operations use the Glovo API through MCP.
+- Browser automation is used only for optional login/session establishment. Store search, product lookup, history, stats, reorder preview, basket operations, and E2E verification use Glovo API HTTP calls through MCP, never browser navigation, tapping, or scraping.
 - The bundled login smoke proves the packaged runtime can open Chrome, but it uses a temporary session and short timeout.
 - Full order details are rate-limited by Glovo; stats are based on card-level order pages unless detail enrichment is explicitly requested.
 - Repeat/reorder is currently read-only preview. The live tested order detail exposed item names/prices/quantities but not stable current product identifiers, so automatic basket rebuild is refused for those lines.

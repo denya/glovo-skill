@@ -5,7 +5,7 @@ export class AuthError extends Error {}
 export class RateLimitError extends Error {}
 
 const API = "https://api.glovoapp.com";
-const WEB_VERSION = "v1.2368.1";
+const WEB_VERSION = "v1.2476.1";
 const DEFAULT_LOCATION = {
   countryCode: process.env.GLOVO_COUNTRY_CODE || "ES",
   cityCode: process.env.GLOVO_CITY_CODE || "BCN",
@@ -51,16 +51,35 @@ function cleanObject(value) {
   return Object.fromEntries(Object.entries(value || {}).filter(([, v]) => v != null && v !== ""));
 }
 
+function productAddEnabled(data) {
+  const elements = data?.data?.footer?.data?.elements ?? data?.footer?.data?.elements ?? [];
+  for (const element of elements) {
+    if (typeof element?.data?.isEnabled === "boolean") return element.data.isEnabled;
+  }
+  return null;
+}
+
 function safePath(path) {
-  return path.replace(/\/authenticated\/customers\/[^/]+/g, "/authenticated/customers/[customer]");
+  return path
+    .replace(/\/authenticated\/customers\/[^/]+/g, "/authenticated/customers/[customer]")
+    .replace(/\/baskets\/[^/]+\/products\/[^/]+/g, "/baskets/[basket]/products/[products]")
+    .replace(/\/baskets\/[^/]+\/products/g, "/baskets/[basket]/products")
+    .replace(/\/baskets\/[^/]+/g, "/baskets/[basket]");
+}
+
+function redactIdentifiers(text) {
+  return String(text || "")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "[id]")
+    .replace(/\b(?:basket|product|store|address|customer|bp|sp|p|e)-[A-Za-z0-9_-]+\b/g, "[id]")
+    .replace(/\d+/g, "#");
 }
 
 function safeErrorBody(text) {
   try {
     const parsed = JSON.parse(text);
-    return parsed?.error?.exceptionName || parsed?.error?.staticCode || parsed?.error?.message?.replace(/\d+/g, "#") || "request_failed";
+    return parsed?.error?.exceptionName || redactIdentifiers(parsed?.error?.staticCode || parsed?.error?.message) || "request_failed";
   } catch {
-    return String(text || "").replace(/\d+/g, "#").slice(0, 180);
+    return redactIdentifiers(text).slice(0, 180);
   }
 }
 
@@ -130,6 +149,67 @@ export class GlovoClient {
     return this.location();
   }
 
+  searchAddresses(address, { allowFallback = true } = {}) {
+    if (String(address || "").trim().length < 3) throw new Error("Address search requires at least 3 characters.");
+    const params = new URLSearchParams({ address: String(address), allowFallback: String(Boolean(allowFallback)) });
+    return this.call(`/v3/addresslookup/pub/address?${params.toString()}`);
+  }
+
+  resolveAddress(placeId, provider) {
+    if (!placeId) throw new Error("placeId is required.");
+    const params = new URLSearchParams();
+    if (provider) params.set("provider", String(provider));
+    return this.call(`/v3/addresslookup/pub/${encodeURIComponent(placeId)}${params.toString() ? `?${params.toString()}` : ""}`);
+  }
+
+  reverseAddress({ latitude, longitude, allowFallback = true }) {
+    if (latitude == null || longitude == null) throw new Error("latitude and longitude are required.");
+    const params = new URLSearchParams({
+      latitude: String(latitude),
+      longitude: String(longitude),
+      allowFallback: String(Boolean(allowFallback)),
+    });
+    return this.call(`/v3/addresslookup/pub/coordinates?${params.toString()}`);
+  }
+
+  deliveryPointInfo({ latitude, longitude, countryCode }) {
+    if (latitude == null || longitude == null) throw new Error("latitude and longitude are required.");
+    if (!countryCode) throw new Error("countryCode is required.");
+    const params = new URLSearchParams({
+      latitude: String(latitude),
+      longitude: String(longitude),
+      countryCode: String(countryCode),
+    });
+    return this.call(`/customer_profile/api/v1/guest/address_book/delivery_point_info?${params.toString()}`);
+  }
+
+  async selectLocation({ placeId, provider } = {}) {
+    const resolvedRaw = await this.resolveAddress(placeId, provider);
+    const resolved = compactResolvedLocation(resolvedRaw);
+    if (!resolved.valid) return { selected: false, deliverable: false, title: resolved.title, city_code: null, country_code: null, reason: resolved.reason };
+
+    const serviceRaw = await this.deliveryPointInfo({
+      latitude: resolved.latitude,
+      longitude: resolved.longitude,
+      countryCode: resolved.country_code,
+    });
+    const service = compactDeliveryPointInfo(serviceRaw);
+    const cityCode = service.city_code || resolved.city_code;
+    const countryCode = service.country_code || resolved.country_code;
+    const deliverable = service.deliverable === true;
+    if (!deliverable) return { selected: false, deliverable: false, title: resolved.title, city_code: cityCode || null, country_code: countryCode || null, reason: "not_deliverable" };
+    if (!validLocationCodes({ countryCode, cityCode })) return { selected: false, deliverable: true, title: resolved.title, city_code: cityCode || null, country_code: countryCode || null, reason: "invalid_codes" };
+
+    this.setLocation({
+      countryCode,
+      cityCode,
+      latitude: String(resolved.latitude),
+      longitude: String(resolved.longitude),
+      accuracy: String(resolved.accuracy ?? 0),
+    });
+    return { selected: true, deliverable: true, title: resolved.title, city_code: cityCode, country_code: countryCode };
+  }
+
   baseHeaders({ auth = false } = {}) {
     const location = this.location();
     const now = String(Date.now());
@@ -164,7 +244,7 @@ export class GlovoClient {
 
   async refresh() {
     if (!this.session?.refreshToken) throw new AuthError("Glovo session expired. Run glovo_login again.");
-    const res = await fetch(`${API}/oauth/refresh`, {
+    const res = await globalThis.fetch(`${API}/oauth/refresh`, {
       method: "POST",
       headers: this.baseHeaders(),
       body: JSON.stringify({ refreshToken: this.session.refreshToken }),
@@ -194,7 +274,7 @@ export class GlovoClient {
 
   async call(path, { method = "GET", body, auth = false, allowNotFound = false } = {}) {
     if (auth) await this.ensureAuth();
-    const res = await fetch(`${API}${path}`, {
+    const res = await globalThis.fetch(`${API}${path}`, {
       method,
       headers: this.baseHeaders({ auth }),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -299,6 +379,7 @@ export class GlovoClient {
   createBasket({ storeId, storeAddressId, storeCategoryId, product }) {
     const id = this.session?.customerId || this.session?.customer?.id;
     if (!id) throw new AuthError("No customer id in Glovo session. Run glovo_login again.");
+    if (!storeCategoryId || Number(storeCategoryId) === 0) throw new Error("storeCategoryId is required for new basket creation.");
     return this.call(`/v1/authenticated/customers/${id}/baskets`, {
       method: "POST",
       auth: true,
@@ -306,7 +387,7 @@ export class GlovoClient {
         products: [product],
         storeId: asNumberIfNumeric(storeId),
         storeAddressId: asNumberIfNumeric(storeAddressId),
-        storeCategoryId: asNumberIfNumeric(storeCategoryId ?? 0),
+        storeCategoryId: asNumberIfNumeric(storeCategoryId),
         handlingStrategy: "DELIVERY",
       },
     });
@@ -315,7 +396,7 @@ export class GlovoClient {
   updateBasketProducts(basketId, payload) {
     const id = this.session?.customerId || this.session?.customer?.id;
     if (!id) throw new AuthError("No customer id in Glovo session. Run glovo_login again.");
-    return this.call(`/v1/authenticated/customers/${id}/baskets/${basketId}/products`, {
+    return this.call(`/v1/authenticated/customers/${id}/baskets/${encodeURIComponent(basketId)}/products`, {
       method: "PUT",
       auth: true,
       body: payload,
@@ -325,7 +406,7 @@ export class GlovoClient {
   updateProductQuantity(basketId, payload) {
     const id = this.session?.customerId || this.session?.customer?.id;
     if (!id) throw new AuthError("No customer id in Glovo session. Run glovo_login again.");
-    return this.call(`/v1/authenticated/customers/${id}/baskets/${basketId}/products/quantity`, {
+    return this.call(`/v1/authenticated/customers/${id}/baskets/${encodeURIComponent(basketId)}/products/quantity`, {
       method: "PATCH",
       auth: true,
       body: payload,
@@ -335,15 +416,26 @@ export class GlovoClient {
   removeProducts(basketId, basketProductIds) {
     const id = this.session?.customerId || this.session?.customer?.id;
     if (!id) throw new AuthError("No customer id in Glovo session. Run glovo_login again.");
-    return this.call(`/v1/authenticated/customers/${id}/baskets/${basketId}/products/${basketProductIds.join(",")}`, {
+    const encodedProductIds = basketProductIds.map((value) => encodeURIComponent(value)).join(",");
+    return this.call(`/v1/authenticated/customers/${id}/baskets/${encodeURIComponent(basketId)}/products/${encodedProductIds}`, {
       method: "DELETE",
       auth: true,
     });
   }
 
+  deleteBasket(basketId) {
+    const id = this.session?.customerId || this.session?.customer?.id;
+    if (!id) throw new AuthError("No customer id in Glovo session. Run glovo_login again.");
+    return this.call(`/v1/authenticated/customers/${id}/baskets/${encodeURIComponent(basketId)}`, {
+      method: "DELETE",
+      auth: true,
+      allowNotFound: true,
+    });
+  }
+
   async addToBasket({ storeId, storeAddressId, storeCategoryId, productId, externalId, storeProductId, quantity = 1, selectedOptions = [], productView = null }) {
     if (productView) validateSelectedOptions(productView, selectedOptions);
-    const product = basketProduct({ productId, externalId, storeProductId, quantity, selectedOptions });
+    const product = basketProduct({ productId, externalId, storeProductId, quantity, selectedOptions, productView });
     const basket = await this.getBasketByStore(storeId);
     if (!basket) return this.createBasket({ storeId, storeAddressId, storeCategoryId, product });
     const existing = findBasketProduct(basket, { productId, storeProductId });
@@ -366,7 +458,11 @@ export class GlovoClient {
     const product = findBasketProduct(basket, { productId, storeProductId, basketProductId });
     const id = basketProductId || product?.ids?.basketProductId;
     if (!id) throw new Error("Product is not in the basket.");
-    if (quantity <= 0) return this.removeProducts(basket.basketId, [id]);
+    if (quantity <= 0) return this.updateProductQuantity(basket.basketId, {
+      handlingStrategy: basket.handlingStrategy || "DELIVERY",
+      basketVersion: basket.basketVersion,
+      products: [{ basketProductId: id, quantity: 0 }],
+    });
     return this.updateProductQuantity(basket.basketId, {
       handlingStrategy: basket.handlingStrategy || "DELIVERY",
       basketVersion: basket.basketVersion,
@@ -380,7 +476,11 @@ export class GlovoClient {
     const product = findBasketProduct(basket, { productId, storeProductId, basketProductId });
     const id = basketProductId || product?.ids?.basketProductId;
     if (!id) throw new Error("Product is not in the basket.");
-    return this.removeProducts(basket.basketId, [id]);
+    return this.updateProductQuantity(basket.basketId, {
+      handlingStrategy: basket.handlingStrategy || "DELIVERY",
+      basketVersion: basket.basketVersion,
+      products: [{ basketProductId: id, quantity: 0 }],
+    });
   }
 
   getOrders({ offset = 0, limit = 15 } = {}) {
@@ -460,6 +560,92 @@ export function compactStore(entry) {
   };
 }
 
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.results)) return value.results;
+  if (Array.isArray(value?.predictions)) return value.predictions;
+  if (Array.isArray(value?.addresses)) return value.addresses;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.data?.results)) return value.data.results;
+  if (Array.isArray(value?.data?.predictions)) return value.data.predictions;
+  if (Array.isArray(value?.data?.addresses)) return value.data.addresses;
+  return [];
+}
+
+function firstValue(...values) {
+  return values.find((value) => value != null && value !== "");
+}
+
+export function compactLocationSearch(data, { limit = 5 } = {}) {
+  const max = Math.min(Math.max(Number(limit) || 5, 1), 5);
+  const results = asArray(data).slice(0, max).map((entry) => ({
+    place_id: firstValue(entry.placeId, entry.place_id, entry.id),
+    provider: firstValue(entry.provider, entry.source),
+    title: firstValue(entry.title, entry.mainText, entry.primaryText, entry.name, entry.description),
+    subtitle: firstValue(entry.subtitle, entry.secondaryText),
+  })).filter((entry) => entry.place_id && entry.title);
+  return {
+    count: results.length,
+    results,
+  };
+}
+
+function coordinatePair(data) {
+  const src = data?.data ?? data;
+  const location = src?.geometry?.location ?? src?.location ?? src?.coordinates ?? src?.coordinate ?? {};
+  return {
+    latitude: Number(firstValue(src?.latitude, src?.lat, location.latitude, location.lat)),
+    longitude: Number(firstValue(src?.longitude, src?.lon, src?.lng, location.longitude, location.lon, location.lng)),
+  };
+}
+
+function locationCode(data, keys) {
+  const src = data?.data ?? data;
+  for (const key of keys) {
+    const value = key.split(".").reduce((acc, part) => acc?.[part], src);
+    if (value != null && value !== "") return String(value).toUpperCase();
+  }
+  return null;
+}
+
+function validCoordinates({ latitude, longitude }) {
+  return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+}
+
+function validLocationCodes({ countryCode, cityCode }) {
+  return /^[A-Z]{2}$/.test(String(countryCode || "")) && /^[A-Z0-9_-]{2,}$/i.test(String(cityCode || ""));
+}
+
+export function compactResolvedLocation(data) {
+  const src = data?.data ?? data ?? {};
+  const coords = coordinatePair(src);
+  const countryCode = locationCode(src, ["countryCode", "country_code", "country.code", "address.countryCode"]);
+  const cityCode = locationCode(src, ["cityCode", "city_code", "city.code", "address.cityCode"]);
+  const title = firstValue(src.title, src.name, src.description, src.formattedAddress, src.address);
+  const valid = validCoordinates(coords) && /^[A-Z]{2}$/.test(String(countryCode || ""));
+  return {
+    valid,
+    reason: valid ? undefined : "invalid_resolved_location",
+    title,
+    country_code: countryCode,
+    city_code: cityCode,
+    latitude: coords.latitude,
+    longitude: coords.longitude,
+    accuracy: Number(firstValue(src.accuracy, src.location?.accuracy, 0)),
+  };
+}
+
+export function compactDeliveryPointInfo(data) {
+  const src = data?.data ?? data ?? {};
+  const deliverable = firstValue(src.valid, src.deliverable, src.isDeliverable, src.serviceable, src.isServiceable, src.deliveryAvailable, src.isValid);
+  return {
+    deliverable: deliverable === true || String(deliverable).toLowerCase() === "true",
+    country_code: locationCode(src, ["countryCode", "country_code", "country.code", "address.countryCode"]),
+    city_code: locationCode(src, ["cityCode", "city_code", "city.code", "address.cityCode"]),
+  };
+}
+
 export function compactStoreWall(data) {
   const stores = data?.data?.stores ?? data?.stores ?? {};
   return {
@@ -521,6 +707,7 @@ export function compactSearch(data, { storeId, storeAddressId, limit = 24 } = {}
 
 export function compactProductView(data) {
   const meta = data?.data?.metadata?.product ?? data?.metadata?.product ?? data?.product ?? data;
+  const addEnabled = productAddEnabled(data);
   return {
     ...compactItem({
     id: meta?.id,
@@ -533,6 +720,8 @@ export function compactProductView(data) {
     sponsored: meta?.sponsored,
     restricted: meta?.restricted,
     }),
+    available: addEnabled,
+    add_enabled: addEnabled,
     option_groups: optionGroupsFromProduct(data),
     required_sections: data?.data?.actions?.primary?.events?.flatMap((e) => e?.data?.requiredSections || []) || [],
   };
@@ -644,23 +833,60 @@ export function compactReorderPreview(o) {
   };
 }
 
-export function basketProduct({ productId, externalId, storeProductId, quantity = 1, selectedOptions = [] }) {
+export function basketProduct({ productId, externalId, storeProductId, quantity = 1, selectedOptions = [], productView = null }) {
+  if (!productId) throw new Error("productId is required for basket product payloads.");
+  if (!externalId) throw new Error("externalId is required for basket product payloads.");
+  if (!storeProductId) throw new Error("storeProductId is required for basket product payloads.");
   const product = {
     ids: {
       id: String(productId),
-      externalId: String(externalId ?? storeProductId ?? productId),
-      legacyId: String(productId),
-      storeProductId: String(storeProductId ?? externalId ?? productId),
+      externalId: String(externalId),
+      storeProductId: String(storeProductId),
     },
     quantity: { increments: quantity },
   };
-  const attrs = selectedOptions.map((o) => cleanObject({
-    attributeGroupId: String(o.group_id ?? o.attributeGroupId ?? o.groupId),
-    attributeId: String(o.option_id ?? o.attributeId ?? o.id),
-    quantity: o.quantity ?? 1,
-  }));
-  if (attrs.length) product.attributes = attrs;
+  const customizations = customizationPayload(productView, selectedOptions);
+  if (customizations.length) product.customizations = customizations;
   return product;
+}
+
+export function storeCategoryIdFromStore(store) {
+  return store?.categoryId ?? store?.data?.categoryId ?? store?.store?.categoryId ?? null;
+}
+
+function requireValue(value, label) {
+  if (value == null || value === "") throw new Error(`Missing ${label} for customization payload.`);
+  return value;
+}
+
+export function customizationPayload(productView, selectedOptions = []) {
+  if (!selectedOptions.length) return [];
+  if (!productView) throw new Error("productView is required for customization payloads.");
+  const groups = optionGroupsFromProduct(productView);
+  return selectedOptions.map((selected) => {
+    const groupId = String(selected.group_id ?? selected.attributeGroupId ?? selected.groupId);
+    const optionId = String(selected.option_id ?? selected.attributeId ?? selected.id);
+    const group = groups.find((candidate) => candidate.id === groupId);
+    if (!group) throw new Error(`Unknown option group ${groupId}.`);
+    const option = group.options.find((candidate) => candidate.id === optionId);
+    if (!option) throw new Error(`Unknown option ${optionId} for group ${groupId}.`);
+    const ids = {
+      groupLegacyId: requireValue(group.groupLegacyId, "groupLegacyId"),
+      groupId: requireValue(group.groupId, "groupId"),
+      groupExternalId: requireValue(group.groupExternalId, "groupExternalId"),
+      groupPosition: requireValue(group.groupPosition, "groupPosition"),
+      legacyId: requireValue(option.legacyId, "legacyId"),
+      externalId: requireValue(option.externalId, "externalId"),
+    };
+    if (option.optionId != null && option.optionId !== "") ids.id = option.optionId;
+    return {
+      ids,
+      name: option.name,
+      quantity: { increments: selected.quantity ?? 1 },
+      customizationName: option.name,
+      groupName: group.name,
+    };
+  });
 }
 
 export function findBasketProduct(basket, { productId, storeProductId, basketProductId }) {
@@ -686,12 +912,19 @@ export function optionGroupsFromProduct(data) {
     const id = String(group.id ?? group.attributeGroupId ?? group.externalId);
     return {
       id,
+      groupLegacyId: group.id,
+      groupId: group.attributeGroupId,
+      groupExternalId: group.externalId,
+      groupPosition: group.position,
       name: group.name,
       required: Boolean(group.required || group.minSelection === 1 || group.minSelections > 0 || group.min > 0 || requiredIds.has(id) || requiredIds.has(String(group.externalId))),
       min: group.minSelection ?? group.minSelections ?? group.min ?? 0,
       max: group.maxSelection ?? group.maxSelections ?? group.max ?? null,
       options: options.map((option) => ({
         id: String(option.id ?? option.attributeId ?? option.externalId),
+        legacyId: option.id,
+        optionId: option.attributeId,
+        externalId: option.externalId,
         name: option.name,
         price: option.priceInfo?.displayText ?? option.price?.formatted ?? option.price,
       })),
