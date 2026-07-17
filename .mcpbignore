@@ -1,0 +1,16 @@
+.git/
+.claude-plugin/
+.mcp.json
+node_modules/
+.glovo/
+src/
+scripts/
+skills/
+tests/
+docs/planning/
+package-lock.json
+TODO.md
+SCRATCHBOOK.md
+HYPOTHESES.md
+*.mcpb
+*.log

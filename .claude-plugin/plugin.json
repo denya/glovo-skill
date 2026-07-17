@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "glovo",
+  "displayName": "Glovo",
+  "description": "Browse Glovo stores, inspect products and options, read order history, and prepare baskets without checkout.",
+  "author": {
+    "name": "Denya"
+  },
+  "repository": "https://github.com/denya/glovo-skill",
+  "license": "MIT",
+  "keywords": ["glovo", "grocery", "food-delivery", "shopping", "basket", "orders", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

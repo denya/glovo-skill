@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "glovo": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"],
+      "env": {
+        "GLOVO_SESSION_PATH": "${CLAUDE_PLUGIN_DATA}/session.json"
+      }
+    }
+  }
+}

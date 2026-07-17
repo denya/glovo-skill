@@ -1,0 +1,40 @@
+{
+  "manifest_version": "0.3",
+  "name": "glovo",
+  "display_name": "Glovo",
+  "version": "0.1.0",
+  "description": "Browse Glovo stores, inspect products and options, read order history, and prepare baskets without checkout.",
+  "author": {
+    "name": "Denya"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/denya/glovo-skill.git"
+  },
+  "homepage": "https://github.com/denya/glovo-skill",
+  "documentation": "https://github.com/denya/glovo-skill#readme",
+  "support": "https://github.com/denya/glovo-skill/issues",
+  "license": "MIT",
+  "privacy_policies": [
+    "https://glovoapp.com/en/legal/privacy"
+  ],
+  "keywords": ["glovo", "grocery", "food-delivery", "shopping", "basket", "orders", "mcp"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/server.mjs"],
+      "env": {
+        "GLOVO_SESSION_PATH": "${HOME}/.glovo/session.json"
+      }
+    }
+  },
+  "tools_generated": true,
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}

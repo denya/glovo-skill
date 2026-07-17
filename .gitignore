@@ -1,0 +1,5 @@
+node_modules/
+*.mcpb
+.DS_Store
+.glovo/
+*.log

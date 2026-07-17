@@ -1,0 +1,46 @@
+{
+  "name": "glovo-mcp",
+  "version": "0.1.0",
+  "description": "Local Glovo MCP server for browsing stores, searching items, reading order history, and preparing baskets. No checkout.",
+  "type": "module",
+  "main": "dist/server.mjs",
+  "scripts": {
+    "build": "esbuild src/server.mjs --bundle --platform=node --format=esm --target=node18 --loader:.md=text --banner:js=\"import { createRequire } from 'node:module'; import { fileURLToPath as bundleFileURLToPath } from 'node:url'; import { dirname as bundleDirname } from 'node:path'; const require = createRequire(import.meta.url); const __filename = bundleFileURLToPath(import.meta.url); const __dirname = bundleDirname(__filename);\" --outfile=dist/server.mjs --external:chromium-bidi/lib/cjs/bidiMapper/BidiMapper --external:chromium-bidi/lib/cjs/cdp/CdpConnection",
+    "start": "node dist/server.mjs",
+    "login": "node scripts/login.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "live:e2e": "node scripts/live-e2e.mjs",
+    "live:e2e:preflight": "node scripts/live-e2e.mjs --preflight",
+    "live:e2e:mutate": "node scripts/live-e2e.mjs --mutate",
+    "test": "node tests/session-store.test.mjs && node tests/refresh-rotation.test.mjs && node tests/order-contract.test.mjs && node tests/reorder-preview.test.mjs && node tests/error-redaction.test.mjs && node tests/browser-boundary.test.mjs && node tests/basket-restore.test.mjs",
+    "scan:secrets": "node scripts/secret-scan.mjs",
+    "test:mcp": "npm run build && node scripts/test-mcp.mjs",
+    "test:mcp:auth": "npm run build && node scripts/test-mcp.mjs --auth",
+    "validate:plugin": "claude plugin validate . --strict",
+    "validate:mcpb": "npx -y @anthropic-ai/mcpb validate manifest.json",
+    "pack:mcpb": "npx -y @anthropic-ai/mcpb pack .",
+    "verify": "npm run build && npm test && npm run validate:plugin && npm run validate:mcpb && npm run test:mcp && npm audit --audit-level=high && npm run scan:secrets"
+  },
+  "keywords": [
+    "glovo",
+    "grocery",
+    "food-delivery",
+    "shopping",
+    "basket",
+    "orders",
+    "mcp",
+    "codex"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "playwright-core": "^1.61.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}
